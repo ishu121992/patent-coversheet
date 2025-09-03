@@ -1,0 +1,600 @@
+<div class="coversheet-container">
+    <div class="input-section">
+        <h3>Patent Information</h3>
+        <p>Enter the patent details to generate a professional coversheet for granted patents.</p>
+        
+        <form id="coversheet-form" class="coversheet-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="patent-number">Patent Number *</label>
+                    <input 
+                        type="text" 
+                        id="patent-number" 
+                        name="patentNumber"
+                        placeholder="e.g., US10123456B2"
+                        pattern="^[A-Z]{2}[0-9]+[A-Z][0-9]?$"
+                        required
+                    >
+                    <small class="form-help">Format: US10123456B2</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="patent-title">Patent Title *</label>
+                    <input 
+                        type="text" 
+                        id="patent-title" 
+                        name="patentTitle"
+                        placeholder="Enter the complete patent title"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="inventors">Inventor(s) *</label>
+                    <textarea 
+                        id="inventors" 
+                        name="inventors"
+                        rows="3"
+                        placeholder="Enter inventor names, one per line or separated by semicolons"
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="assignee">Assignee</label>
+                    <input 
+                        type="text" 
+                        id="assignee" 
+                        name="assignee"
+                        placeholder="Company or organization name"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="filing-date">Filing Date *</label>
+                    <input 
+                        type="date" 
+                        id="filing-date" 
+                        name="filingDate"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="grant-date">Grant Date *</label>
+                    <input 
+                        type="date" 
+                        id="grant-date" 
+                        name="grantDate"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="application-number">Application Number</label>
+                    <input 
+                        type="text" 
+                        id="application-number" 
+                        name="applicationNumber"
+                        placeholder="e.g., 16/123,456"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="international-class">International Classification</label>
+                    <input 
+                        type="text" 
+                        id="international-class" 
+                        name="internationalClass"
+                        placeholder="e.g., G06F 17/30"
+                    >
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h4>Abstract</h4>
+                <div class="form-group">
+                    <textarea 
+                        id="abstract" 
+                        name="abstract"
+                        rows="6"
+                        placeholder="Enter the patent abstract..."
+                    ></textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h4>Claims Information</h4>
+                <div class="claims-grid">
+                    <div class="form-group">
+                        <label for="total-claims">Total Claims</label>
+                        <input 
+                            type="number" 
+                            id="total-claims" 
+                            name="totalClaims"
+                            min="1"
+                            placeholder="e.g., 20"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="independent-claims">Independent Claims</label>
+                        <input 
+                            type="number" 
+                            id="independent-claims" 
+                            name="independentClaims"
+                            min="1"
+                            placeholder="e.g., 3"
+                        >
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" id="auto-fill" class="btn btn-secondary">
+                    🔍 Auto-fill from Patent Number
+                </button>
+                <button type="submit" id="generate-coversheet-btn" class="btn btn-primary">
+                    📄 Generate Coversheet
+                </button>
+                <button type="button" id="clear-form" class="btn btn-secondary">
+                    Clear Form
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div class="preview-section" id="preview-section">
+        <div class="preview-header">
+            <h3>Coversheet Preview</h3>
+            <div class="preview-actions">
+                <button id="download-pdf" class="btn btn-success">
+                    📥 Download PDF
+                </button>
+                <button id="download-docx" class="btn btn-success">
+                    📥 Download DOCX
+                </button>
+                <button id="print-coversheet" class="btn btn-secondary">
+                    🖨️ Print
+                </button>
+            </div>
+        </div>
+
+        <div class="preview-content" id="preview-content">
+            <div class="coversheet-preview">
+                <div class="coversheet-header">
+                    <h1>UNITED STATES PATENT</h1>
+                    <div class="patent-number-display" id="preview-patent-number">
+                        Patent No.: [Patent Number]
+                    </div>
+                    <div class="grant-date-display" id="preview-grant-date">
+                        Date of Patent: [Grant Date]
+                    </div>
+                </div>
+
+                <div class="coversheet-body">
+                    <div class="title-section">
+                        <h2 id="preview-title">[Patent Title]</h2>
+                    </div>
+
+                    <div class="info-section">
+                        <div class="info-row">
+                            <span class="info-label">Inventor(s):</span>
+                            <span class="info-value" id="preview-inventors">[Inventors]</span>
+                        </div>
+
+                        <div class="info-row">
+                            <span class="info-label">Assignee:</span>
+                            <span class="info-value" id="preview-assignee">[Assignee]</span>
+                        </div>
+
+                        <div class="info-row">
+                            <span class="info-label">Application No.:</span>
+                            <span class="info-value" id="preview-app-number">[Application Number]</span>
+                        </div>
+
+                        <div class="info-row">
+                            <span class="info-label">Filed:</span>
+                            <span class="info-value" id="preview-filing-date">[Filing Date]</span>
+                        </div>
+
+                        <div class="info-row">
+                            <span class="info-label">Int. Cl.:</span>
+                            <span class="info-value" id="preview-int-class">[International Classification]</span>
+                        </div>
+                    </div>
+
+                    <div class="abstract-section">
+                        <h3>ABSTRACT</h3>
+                        <p id="preview-abstract">[Abstract will appear here]</p>
+                    </div>
+
+                    <div class="claims-section">
+                        <div class="claims-info">
+                            <span><strong>Claims:</strong> <span id="preview-total-claims">[Total]</span></span>
+                            <span><strong>Independent:</strong> <span id="preview-independent-claims">[Independent]</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.coversheet-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 1400px;
+}
+
+.input-section,
+.preview-section {
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.input-section h3,
+.preview-section h3 {
+    color: #2c3e50;
+    margin-bottom: 12px;
+    font-size: 1.2em;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.form-section {
+    margin-bottom: 24px;
+}
+
+.form-section h4 {
+    color: #2c3e50;
+    margin-bottom: 16px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #e1e8ed;
+    padding-bottom: 8px;
+}
+
+.claims-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.preview-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.preview-content {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    background: #fafafa;
+    min-height: 600px;
+}
+
+.coversheet-preview {
+    background: white;
+    padding: 40px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-family: 'Times New Roman', serif;
+}
+
+.coversheet-header {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+}
+
+.coversheet-header h1 {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.patent-number-display,
+.grant-date-display {
+    font-size: 14px;
+    margin: 5px 0;
+}
+
+.title-section {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.title-section h2 {
+    font-size: 16px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.info-section {
+    margin-bottom: 30px;
+}
+
+.info-row {
+    display: flex;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.info-label {
+    font-weight: bold;
+    min-width: 120px;
+    flex-shrink: 0;
+}
+
+.info-value {
+    flex: 1;
+}
+
+.abstract-section {
+    margin-bottom: 30px;
+}
+
+.abstract-section h3 {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.abstract-section p {
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: justify;
+}
+
+.claims-section {
+    border-top: 1px solid #ccc;
+    padding-top: 15px;
+}
+
+.claims-info {
+    display: flex;
+    gap: 30px;
+    font-size: 12px;
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+    .coversheet-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .form-grid,
+    .claims-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .preview-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .coversheet-preview {
+        padding: 20px;
+    }
+    
+    .claims-info {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .input-section,
+    .preview-header {
+        display: none;
+    }
+    
+    .preview-content {
+        border: none;
+        padding: 0;
+        background: white;
+    }
+    
+    .coversheet-preview {
+        box-shadow: none;
+        padding: 0;
+    }
+}
+</style>
+
+<script>
+// Coversheet generation specific JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('coversheet-form');
+    const previewSection = document.getElementById('preview-section');
+    
+    // Form input handlers for live preview
+    const inputs = form.querySelectorAll('input, textarea');
+    inputs.forEach(input => {
+        input.addEventListener('input', updatePreview);
+    });
+    
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        generateCoversheet();
+    });
+    
+    // Auto-fill functionality
+    document.getElementById('auto-fill').addEventListener('click', function() {
+        const patentNumber = document.getElementById('patent-number').value.trim();
+        if (!patentNumber) {
+            alert('Please enter a patent number first.');
+            return;
+        }
+        autoFillPatentData(patentNumber);
+    });
+    
+    // Clear form
+    document.getElementById('clear-form').addEventListener('click', function() {
+        if (confirm('Are you sure you want to clear all form data?')) {
+            form.reset();
+            updatePreview();
+        }
+    });
+    
+    // Download and print handlers
+    document.getElementById('download-pdf').addEventListener('click', function() {
+        alert('PDF download functionality will be implemented here.');
+    });
+    
+    document.getElementById('download-docx').addEventListener('click', function() {
+        alert('DOCX download functionality will be implemented here.');
+    });
+    
+    document.getElementById('print-coversheet').addEventListener('click', function() {
+        window.print();
+    });
+    
+    function updatePreview() {
+        const formData = new FormData(form);
+        
+        // Update preview elements
+        document.getElementById('preview-patent-number').textContent = 
+            `Patent No.: ${formData.get('patentNumber') || '[Patent Number]'}`;
+        
+        document.getElementById('preview-grant-date').textContent = 
+            `Date of Patent: ${formatDate(formData.get('grantDate')) || '[Grant Date]'}`;
+        
+        document.getElementById('preview-title').textContent = 
+            formData.get('patentTitle') || '[Patent Title]';
+        
+        document.getElementById('preview-inventors').textContent = 
+            formatInventors(formData.get('inventors')) || '[Inventors]';
+        
+        document.getElementById('preview-assignee').textContent = 
+            formData.get('assignee') || '[Assignee]';
+        
+        document.getElementById('preview-app-number').textContent = 
+            formData.get('applicationNumber') || '[Application Number]';
+        
+        document.getElementById('preview-filing-date').textContent = 
+            formatDate(formData.get('filingDate')) || '[Filing Date]';
+        
+        document.getElementById('preview-int-class').textContent = 
+            formData.get('internationalClass') || '[International Classification]';
+        
+        document.getElementById('preview-abstract').textContent = 
+            formData.get('abstract') || '[Abstract will appear here]';
+        
+        document.getElementById('preview-total-claims').textContent = 
+            formData.get('totalClaims') || '[Total]';
+        
+        document.getElementById('preview-independent-claims').textContent = 
+            formData.get('independentClaims') || '[Independent]';
+    }
+    
+    function formatDate(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+    }
+    
+    function formatInventors(inventorsString) {
+        if (!inventorsString) return '';
+        return inventorsString
+            .split(/[;\n]/)
+            .map(inventor => inventor.trim())
+            .filter(inventor => inventor.length > 0)
+            .join('; ');
+    }
+    
+    function autoFillPatentData(patentNumber) {
+        // Simulate API call to fetch patent data
+        const button = document.getElementById('auto-fill');
+        const originalText = button.textContent;
+        button.textContent = 'Loading...';
+        button.disabled = true;
+        
+        setTimeout(() => {
+            // Mock data - replace with actual API call
+            const mockData = {
+                title: 'Advanced Machine Learning System and Method',
+                inventors: 'Smith, John A.; Johnson, Mary B.; Wilson, David C.',
+                assignee: 'Technology Innovations Corp.',
+                filingDate: '2022-01-15',
+                grantDate: '2023-06-20',
+                applicationNumber: '17/234,567',
+                internationalClass: 'G06N 3/08',
+                abstract: 'A system and method for implementing advanced machine learning algorithms with improved efficiency and accuracy. The invention provides a novel approach to neural network training that reduces computational requirements while maintaining high performance.',
+                totalClaims: '18',
+                independentClaims: '3'
+            };
+            
+            // Fill form with mock data
+            document.getElementById('patent-title').value = mockData.title;
+            document.getElementById('inventors').value = mockData.inventors;
+            document.getElementById('assignee').value = mockData.assignee;
+            document.getElementById('filing-date').value = mockData.filingDate;
+            document.getElementById('grant-date').value = mockData.grantDate;
+            document.getElementById('application-number').value = mockData.applicationNumber;
+            document.getElementById('international-class').value = mockData.internationalClass;
+            document.getElementById('abstract').value = mockData.abstract;
+            document.getElementById('total-claims').value = mockData.totalClaims;
+            document.getElementById('independent-claims').value = mockData.independentClaims;
+            
+            updatePreview();
+            
+            button.textContent = originalText;
+            button.disabled = false;
+        }, 2000);
+    }
+    
+    function generateCoversheet() {
+        alert('Coversheet generation complete! Use the download buttons to save your coversheet.');
+    }
+    
+    // Initialize preview
+    updatePreview();
+});
+</script>

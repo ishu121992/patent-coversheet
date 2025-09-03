@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patent Coversheet App</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Patent Tools</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-button" data-view="download-publications">
+                    <span class="nav-icon">📥</span>
+                    Download Patent Publications
+                </button>
+                <button class="nav-button" data-view="generate-coversheet">
+                    <span class="nav-icon">📄</span>
+                    Generate Granted Patent Coversheet
+                </button>
+                <button class="nav-button" data-view="settings">
+                    <span class="nav-icon">⚙️</span>
+                    Settings
+                </button>
+            </nav>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <div class="content-header">
+                <h1 id="content-title">Welcome to Patent Coversheet App</h1>
+            </div>
+            <div class="content-body" id="content-body">
+                <div class="welcome-message">
+                    <h3>Get Started</h3>
+                    <p>Select an option from the sidebar to begin:</p>
+                    <ul>
+                        <li><strong>Download Patent Publications:</strong> Search and download patent documents</li>
+                        <li><strong>Generate Granted Patent Coversheet:</strong> Create professional coversheets for granted patents</li>
+                        <li><strong>Settings:</strong> Configure your API keys for USPTO and Espacenet</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

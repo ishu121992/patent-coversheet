@@ -1,0 +1,190 @@
+<div class="settings-container">
+    <div class="settings-section">
+        <h3>API Configuration</h3>
+        <p>Configure your API keys to access patent databases. These keys are stored securely on your local machine.</p>
+        
+        <form id="settings-form">
+            <div class="form-group">
+                <label for="uspto-api-key">USPTO API Key</label>
+                <input 
+                    type="password" 
+                    id="uspto-api-key" 
+                    name="usptoApiKey"
+                    placeholder="Enter your USPTO API key"
+                    autocomplete="off"
+                >
+                <small class="form-help">
+                    Get your API key from <a href="https://developer.uspto.gov/" target="_blank" rel="noopener noreferrer">USPTO Developer Portal</a>
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="espacenet-consumer-key">Espacenet Consumer Key</label>
+                <input 
+                    type="password" 
+                    id="espacenet-consumer-key" 
+                    name="espacenetConsumerKey"
+                    placeholder="Enter your Espacenet consumer key"
+                    autocomplete="off"
+                >
+                <small class="form-help">
+                    Register at <a href="https://developers.epo.org/" target="_blank" rel="noopener noreferrer">EPO Developer Portal</a>
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="espacenet-secret-key">Espacenet Secret Key</label>
+                <input 
+                    type="password" 
+                    id="espacenet-secret-key" 
+                    name="espacenetSecretKey"
+                    placeholder="Enter your Espacenet secret key"
+                    autocomplete="off"
+                >
+                <small class="form-help">
+                    Keep this key secure and never share it publicly
+                </small>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" id="save-settings" class="btn btn-primary">
+                    Save Settings
+                </button>
+                <button type="button" id="test-connection" class="btn btn-secondary">
+                    Test Connection
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div class="settings-section">
+        <h3>Application Information</h3>
+        <div class="info-grid">
+            <div class="info-item">
+                <strong>Version:</strong>
+                <span>1.0.0</span>
+            </div>
+            <div class="info-item">
+                <strong>Platform:</strong>
+                <span id="platform-info">Loading...</span>
+            </div>
+            <div class="info-item">
+                <strong>Electron Version:</strong>
+                <span id="electron-version">Loading...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h3>Data Management</h3>
+        <p>Manage your local application data and cache.</p>
+        
+        <div class="form-actions">
+            <button type="button" id="clear-cache" class="btn btn-secondary">
+                Clear Cache
+            </button>
+            <button type="button" id="export-settings" class="btn btn-secondary">
+                Export Settings
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+.settings-container {
+    max-width: 800px;
+}
+
+.settings-section {
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.settings-section h3 {
+    color: #2c3e50;
+    margin-bottom: 12px;
+    font-size: 1.2em;
+}
+
+.settings-section p {
+    color: #666;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.form-help {
+    display: block;
+    margin-top: 6px;
+    color: #666;
+    font-size: 12px;
+}
+
+.form-help a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.form-help a:hover {
+    text-decoration: underline;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.info-item strong {
+    color: #2c3e50;
+}
+</style>
+
+<script>
+// Settings-specific JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    // Update platform information
+    if (window.electronAPI) {
+        document.getElementById('platform-info').textContent = window.electronAPI.platform;
+        document.getElementById('electron-version').textContent = window.electronAPI.versions.electron;
+    }
+
+    // Test connection functionality
+    document.getElementById('test-connection').addEventListener('click', function() {
+        // Placeholder for connection testing
+        alert('Connection testing functionality will be implemented here.');
+    });
+
+    // Clear cache functionality
+    document.getElementById('clear-cache').addEventListener('click', function() {
+        if (confirm('Are you sure you want to clear the application cache?')) {
+            // Placeholder for cache clearing
+            alert('Cache clearing functionality will be implemented here.');
+        }
+    });
+
+    // Export settings functionality
+    document.getElementById('export-settings').addEventListener('click', function() {
+        // Placeholder for settings export
+        alert('Settings export functionality will be implemented here.');
+    });
+});
+</script>
