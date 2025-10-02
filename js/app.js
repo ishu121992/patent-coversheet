@@ -15,7 +15,22 @@ class PatentApp {
 
     init() {
         this.setupNavigation();
+        this.setupProgressListeners();
         this.loadDefaultView();
+    }
+    
+    setupProgressListeners() {
+        // Listen for file wrapper download progress updates
+        if (window.electronAPI && window.electronAPI.onFileWrapperProgress) {
+            window.electronAPI.onFileWrapperProgress((progressData) => {
+                this.updateFileWrapperProgress(
+                    progressData.completed, 
+                    progressData.total, 
+                    progressData.status, 
+                    progressData.filePath
+                );
+            });
+        }
     }
 
     setupNavigation() {
@@ -76,6 +91,9 @@ class PatentApp {
                 break;
             case 'download-publications':
                 this.initializeDownloadView();
+                break;
+            case 'file-wrapper-download':
+                this.initializeFileWrapperView();
                 break;
             case 'generate-coversheet':
                 this.initializeCoversheetView();
@@ -669,6 +687,68 @@ class PatentApp {
         }
     }
 
+    async initializeFileWrapperView() {
+        console.log('Initializing file wrapper view...');
+        
+        // Get DOM elements
+        const applicationInput = document.getElementById('application-number-input');
+        const fetchButton = document.getElementById('fetch-documents');
+        const documentsSection = document.getElementById('documents-section');
+        const documentsList = document.getElementById('documents-list');
+        const selectAllButton = document.getElementById('select-all-documents');
+        const clearAllButton = document.getElementById('clear-all-documents');
+        const downloadButton = document.getElementById('download-selected');
+        const selectedCount = document.getElementById('selected-count');
+        
+        if (!applicationInput || !fetchButton) {
+            console.error('Required file wrapper elements not found');
+            return;
+        }
+        
+        // Store documents data
+        let documentsData = [];
+        
+        // Fetch documents
+        fetchButton.addEventListener('click', async () => {
+            await this.fetchFileWrapperDocuments(applicationInput, documentsSection, documentsList, documentsData);
+            this.updateFileWrapperDownloadButton(documentsData, selectedCount, downloadButton);
+        });
+        
+        // Allow Enter key to trigger fetch
+        applicationInput.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                await this.fetchFileWrapperDocuments(applicationInput, documentsSection, documentsList, documentsData);
+                this.updateFileWrapperDownloadButton(documentsData, selectedCount, downloadButton);
+            }
+        });
+        
+        // Select/Clear all functionality
+        if (selectAllButton) {
+            selectAllButton.addEventListener('click', () => {
+                const checkboxes = document.querySelectorAll('.document-checkbox');
+                checkboxes.forEach(checkbox => checkbox.checked = true);
+                this.updateFileWrapperDownloadButton(documentsData, selectedCount, downloadButton);
+            });
+        }
+        
+        if (clearAllButton) {
+            clearAllButton.addEventListener('click', () => {
+                const checkboxes = document.querySelectorAll('.document-checkbox');
+                checkboxes.forEach(checkbox => checkbox.checked = false);
+                this.updateFileWrapperDownloadButton(documentsData, selectedCount, downloadButton);
+            });
+        }
+        
+        // Download selected documents
+        if (downloadButton) {
+            downloadButton.addEventListener('click', () => {
+                this.downloadSelectedFileWrapperDocuments(documentsData);
+            });
+        }
+        
+        console.log('File wrapper view initialized successfully');
+    }
+
     // Legacy methods - functionality now handled in view-specific JavaScript
     async searchPatents() {
         // This method is no longer used - search functionality moved to download-publications.html
@@ -685,9 +765,229 @@ class PatentApp {
         this.showAlert('Coversheet generation functionality will be implemented here.', 'info');
     }
 
+    async fetchFileWrapperDocuments(applicationInput, documentsSection, documentsList, documentsData) {
+        const appNumber = applicationInput.value.trim();
+        if (!appNumber) {
+            this.showAlert('Please enter an application number', 'error');
+            return;
+        }
+        
+        try {
+            // Show loading state
+            documentsList.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div>Fetching documents...</div>';
+            documentsSection.classList.remove('hidden');
+            
+            console.log('Fetching documents for application:', appNumber);
+            
+            // Call backend to fetch USPTO documents
+            const result = await window.electronAPI.fetchFileWrapperDocuments(appNumber);
+            
+            if (result.success && result.documents) {
+                // Clear documents data and populate with new data
+                documentsData.length = 0;
+                documentsData.push(...result.documents);
+                
+                // Populate documents list
+                this.populateFileWrapperDocuments(documentsList, documentsData);
+                
+                console.log(`Fetched ${documentsData.length} documents`);
+            } else {
+                console.error('Failed to fetch documents:', result.message);
+                documentsList.innerHTML = `<div class="loading-state">❌ ${result.message || 'Failed to fetch documents'}</div>`;
+            }
+        } catch (error) {
+            console.error('Error fetching documents:', error);
+            documentsList.innerHTML = `<div class="loading-state">❌ Error: ${error.message}</div>`;
+        }
+    }
+    
+    populateFileWrapperDocuments(documentsList, documentsData) {
+        if (documentsData.length === 0) {
+            documentsList.innerHTML = '<div class="loading-state">No documents found for this application.</div>';
+            return;
+        }
+        
+        documentsList.innerHTML = documentsData.map((doc, index) => {
+            // Format the official date
+            const dateStr = doc.officialDate ? new Date(doc.officialDate).toLocaleDateString() : 'N/A';
+            
+            // Check if document has download URL
+            const hasDownload = doc.downloadUrl ? '✅' : '❌';
+            const downloadStatus = doc.downloadUrl ? '' : ' (No download available)';
+            
+            return `
+                <div class="document-item" onclick="this.querySelector('input').click()">
+                    <input 
+                        type="checkbox" 
+                        class="document-checkbox" 
+                        data-index="${index}"
+                        ${!doc.downloadUrl ? 'disabled' : ''}
+                        onchange="window.patentApp.updateFileWrapperDownloadButton(); event.stopPropagation()"
+                    >
+                    <div class="document-info">
+                        <div class="document-title">
+                            ${hasDownload} ${doc.documentCodeDescriptionText || doc.documentDescription || 'Document'}${downloadStatus}
+                        </div>
+                        <div class="document-details">
+                            <span class="document-code">${doc.documentCode || 'N/A'}</span>
+                            <span>ID: ${doc.documentIdentifier || 'N/A'}</span>
+                            <span>Date: ${dateStr}</span>
+                            <span>Direction: ${doc.directionCategory || 'N/A'}</span>
+                            ${doc.pageTotalQuantity ? `<span>Pages: ${doc.pageTotalQuantity}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    updateFileWrapperDownloadButton(documentsData, selectedCount, downloadButton) {
+        // This method can be called from different contexts, so we need to get elements if not provided
+        if (!selectedCount) selectedCount = document.getElementById('selected-count');
+        if (!downloadButton) downloadButton = document.getElementById('download-selected');
+        
+        const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+        const count = checkboxes.length;
+        
+        if (selectedCount) {
+            selectedCount.textContent = `${count} document${count !== 1 ? 's' : ''} selected`;
+        }
+        
+        if (downloadButton) {
+            downloadButton.disabled = count === 0;
+        }
+    }
+    
+    async downloadSelectedFileWrapperDocuments(documentsData) {
+        const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+        if (checkboxes.length === 0) {
+            this.showAlert('Please select at least one document', 'error');
+            return;
+        }
+        
+        const selectedDocuments = Array.from(checkboxes).map(checkbox => {
+            const index = parseInt(checkbox.dataset.index);
+            return documentsData[index];
+        });
+        
+        const downloadFormat = document.querySelector('input[name="downloadFormat"]:checked')?.value || 'zip';
+        
+        try {
+            console.log(`Downloading ${selectedDocuments.length} documents as ${downloadFormat}`);
+            
+            // Initialize progress tracking
+            this.initFileWrapperProgress(selectedDocuments.length, downloadFormat);
+            
+            // Call backend to download documents with progress tracking
+            const result = await window.electronAPI.downloadFileWrapperDocuments({
+                documents: selectedDocuments,
+                format: downloadFormat
+            });
+            
+            if (result.success) {
+                console.log('Download completed, file path:', result.filePath);
+                this.updateFileWrapperProgress(selectedDocuments.length, selectedDocuments.length, 'completed', result.filePath);
+                this.showAlert(`Successfully downloaded ${selectedDocuments.length} documents`, 'success');
+            } else {
+                this.updateFileWrapperProgress(0, selectedDocuments.length, 'error', null, result.message);
+                this.showAlert('Download failed: ' + (result.message || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error downloading documents:', error);
+            this.updateFileWrapperProgress(0, selectedDocuments.length, 'error', null, error.message);
+            this.showAlert('Download failed: ' + error.message, 'error');
+        }
+    }
+
+    initFileWrapperProgress(totalDocuments, downloadFormat) {
+        // Show progress section
+        const progressSection = document.getElementById('file-wrapper-progress');
+        if (progressSection) {
+            progressSection.classList.remove('hidden');
+        }
+        
+        // Initialize progress display
+        const progressList = document.getElementById('file-wrapper-progress-list');
+        if (progressList) {
+            const timestamp = new Date().toLocaleString();
+            progressList.innerHTML = `
+                <div class="progress-item" id="file-wrapper-progress-item">
+                    <div class="progress-header-row">
+                        <span class="progress-publication">USPTO File Wrapper (${downloadFormat.toUpperCase()})</span>
+                        <span class="progress-type">${totalDocuments} documents</span>
+                    </div>
+                    <div class="progress-details">
+                        <span class="progress-text">Initializing download...</span>
+                        <span class="progress-timestamp">${timestamp}</span>
+                        <div class="progress-actions"></div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    updateFileWrapperProgress(completed, total, status, filePath = null, errorMessage = null) {
+        const progressItem = document.getElementById('file-wrapper-progress-item');
+        if (!progressItem) return;
+        
+        const progressText = progressItem.querySelector('.progress-text');
+        const progressTimestamp = progressItem.querySelector('.progress-timestamp');
+        const progressActions = progressItem.querySelector('.progress-actions');
+        
+        const timestamp = new Date().toLocaleString();
+        
+        if (status === 'downloading') {
+            if (progressText) progressText.textContent = `Downloading document ${completed + 1} of ${total}...`;
+        } else if (status === 'processing') {
+            if (progressText) progressText.textContent = `Processing documents (${completed}/${total})...`;
+        } else if (status === 'merging') {
+            if (progressText) progressText.textContent = 'Merging PDFs...';
+        } else if (status === 'creating-zip') {
+            if (progressText) progressText.textContent = 'Creating ZIP file...';
+        } else if (status === 'completed') {
+            if (progressText) progressText.textContent = `✅ Successfully downloaded ${total} documents`;
+            if (progressActions && filePath) {
+                progressActions.innerHTML = `
+                    <button class="btn btn-small file-wrapper-open-file" data-file-path="${filePath}">
+                        📂 Open File
+                    </button>
+                    <button class="btn btn-small file-wrapper-show-folder" data-file-path="${filePath}">
+                        � Show in Folder
+                    </button>
+                `;
+                
+                // Add event listeners for the buttons
+                const openFileBtn = progressActions.querySelector('.file-wrapper-open-file');
+                const showFolderBtn = progressActions.querySelector('.file-wrapper-show-folder');
+                
+                if (openFileBtn) {
+                    openFileBtn.addEventListener('click', () => {
+                        console.log('Opening file:', filePath);
+                        window.electronAPI.openPath(filePath);
+                    });
+                }
+                
+                if (showFolderBtn) {
+                    showFolderBtn.addEventListener('click', () => {
+                        console.log('Showing folder for:', filePath);
+                        window.electronAPI.showItemInFolder(filePath);
+                    });
+                }
+            }
+        } else if (status === 'error') {
+            if (progressText) progressText.textContent = `❌ Download failed: ${errorMessage || 'Unknown error'}`;
+            progressItem.classList.add('error');
+        }
+        
+        if (progressTimestamp) {
+            progressTimestamp.textContent = timestamp;
+        }
+    }
+
     updateTitle(viewName) {
         const titles = {
             'download-publications': 'Download Patent Publications',
+            'file-wrapper-download': 'USPTO File Wrapper Download',
             'generate-coversheet': 'Generate Granted Patent Coversheet',
             'settings': 'Settings'
         };

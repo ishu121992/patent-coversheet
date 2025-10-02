@@ -1,0 +1,342 @@
+<div class="file-wrapper-container">
+    <div class="input-section">
+        <h3>USPTO File Wrapper Downloader</h3>
+        <p>Enter a USPTO application number to fetch and download file wrapper documents.</p>
+        
+        <div class="application-input-section">
+            <div class="form-group">
+                <label for="application-number-input">Application Number</label>
+                <div class="input-with-button">
+                    <input 
+                        type="text" 
+                        id="application-number-input" 
+                        placeholder="e.g., 18045436 or 18/045,436"
+                        class="application-input"
+                    >
+                    <button type="button" id="fetch-documents" class="btn btn-primary">Fetch Documents</button>
+                </div>
+                <small class="form-help">
+                    Enter the application number in any format (e.g., 18045436, 18/045,436). It will be automatically formatted for USPTO API.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="documents-section hidden" id="documents-section">
+        <div class="documents-header">
+            <h4>Available Documents</h4>
+            <div class="document-controls">
+                <button type="button" id="select-all-documents" class="btn btn-secondary btn-sm">Select All</button>
+                <button type="button" id="clear-all-documents" class="btn btn-secondary btn-sm">Clear All</button>
+            </div>
+        </div>
+        
+        <div id="documents-list" class="documents-list">
+            <!-- Document checkboxes will be populated here -->
+        </div>
+
+        <div class="download-section">
+            <div class="download-options">
+                <div class="form-group">
+                    <label>Download Format</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="downloadFormat" value="zip" checked>
+                            <span class="radio-custom"></span>
+                            Separate PDFs (ZIP File)
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="downloadFormat" value="merged">
+                            <span class="radio-custom"></span>
+                            Merged PDF Document
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="download-info">
+                <span id="selected-count">0 documents selected</span>
+            </div>
+            
+            <button type="button" id="download-selected" class="btn btn-success" disabled>
+                Download Selected Documents
+            </button>
+        </div>
+    </div>
+
+    <div class="progress-section hidden" id="file-wrapper-progress">
+        <div class="progress-header">
+            <h4>Download Progress</h4>
+        </div>
+        <div class="progress-list" id="file-wrapper-progress-list"></div>
+    </div>
+</div>
+
+<style>
+.file-wrapper-container {
+    max-width: 1200px;
+}
+
+.input-section {
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.input-section h3 {
+    color: #2c3e50;
+    margin-bottom: 12px;
+    font-size: 1.2em;
+}
+
+.application-input-section {
+    margin-bottom: 20px;
+}
+
+.input-with-button {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.application-input {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: monospace;
+}
+
+.form-help {
+    color: #666;
+    font-size: 12px;
+}
+
+.documents-section {
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.documents-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.documents-header h4 {
+    color: #2c3e50;
+    margin: 0;
+}
+
+.document-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.documents-list {
+    min-height: 200px;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 24px;
+    background: #fafbfc;
+}
+
+.document-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    background: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.document-item:hover {
+    background-color: #f5f7fa;
+}
+
+.document-item:last-child {
+    margin-bottom: 0;
+}
+
+.document-item:has(input:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.document-item:has(input:disabled):hover {
+    background-color: white;
+}
+
+.document-checkbox {
+    margin-right: 12px;
+    margin-top: 2px;
+}
+
+.document-info {
+    flex: 1;
+}
+
+.document-title {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.document-details {
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    gap: 16px;
+}
+
+.document-code {
+    font-family: monospace;
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.download-section {
+    border-top: 1px solid #eee;
+    padding-top: 20px;
+}
+
+.download-options {
+    margin-bottom: 20px;
+}
+
+.radio-group {
+    display: flex;
+    gap: 20px;
+    margin-top: 8px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.radio-label input[type="radio"] {
+    display: none;
+}
+
+.radio-custom {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ddd;
+    border-radius: 50%;
+    margin-right: 8px;
+    position: relative;
+    transition: border-color 0.2s;
+}
+
+.radio-label input[type="radio"]:checked + .radio-custom {
+    border-color: #3498db;
+}
+
+.radio-label input[type="radio"]:checked + .radio-custom::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    background: #3498db;
+    border-radius: 50%;
+}
+
+.download-info {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.progress-section {
+    background: white;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.progress-header h4 {
+    color: #2c3e50;
+    margin: 0;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #666;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 12px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .input-with-button {
+        flex-direction: column;
+    }
+    
+    .radio-group {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .documents-header {
+        flex-direction: column;
+        gap: 12px;
+        align-items: stretch;
+    }
+    
+    .document-controls {
+        justify-content: center;
+    }
+}
+</style>
+
+<!-- JavaScript functionality is handled in app.js -->

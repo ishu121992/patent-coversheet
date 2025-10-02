@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // File operations
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
+  openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+  
+  // USPTO File Wrapper operations
+  fetchFileWrapperDocuments: (applicationNumber) => ipcRenderer.invoke('fetch-file-wrapper-documents', applicationNumber),
+  downloadFileWrapperDocuments: (options) => ipcRenderer.invoke('download-file-wrapper-documents', options),
+  onFileWrapperProgress: (callback) => ipcRenderer.on('file-wrapper-progress', (event, data) => callback(data)),
   
   // View management
   loadView: (viewName) => ipcRenderer.invoke('load-view', viewName),
