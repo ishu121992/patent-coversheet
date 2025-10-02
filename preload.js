@@ -7,6 +7,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveApiKeys: (apiKeys) => ipcRenderer.invoke('save-api-keys', apiKeys),
   loadApiKeys: () => ipcRenderer.invoke('load-api-keys'),
   
+  // Download settings management
+  saveDownloadSettings: (settings) => ipcRenderer.invoke('save-download-settings', settings),
+  loadDownloadSettings: () => ipcRenderer.invoke('load-download-settings'),
+  
+  // Directory selection
+  selectDownloadDirectory: () => ipcRenderer.invoke('select-download-directory'),
+  
+  // Patent download
+  downloadPatent: (options) => ipcRenderer.invoke('download-patent', options),
+  
+  // File operations
+  openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
+  
   // View management
   loadView: (viewName) => ipcRenderer.invoke('load-view', viewName),
   
