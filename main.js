@@ -696,47 +696,101 @@ async function downloadSinglePage(fullImageUrl, pageNumber, filePath, accessToke
 async function downloadAllPages(fullImageUrl, numberOfPages, filePath, accessToken) {
   console.log(`📚 Downloading all ${numberOfPages} pages and merging into single PDF...`);
   
+  // Configuration for parallel downloads
+  const MAX_CONCURRENT_DOWNLOADS = Math.min(numberOfPages, 8); // Limit to 8 concurrent downloads
+  console.log(`⚙️ Using ${MAX_CONCURRENT_DOWNLOADS} concurrent downloads for ${numberOfPages} pages`);
+  
   try {
     const tempDir = path.join(path.dirname(filePath), 'temp_' + Date.now());
     await fs.promises.mkdir(tempDir, { recursive: true });
     console.log('Created temp directory:', tempDir);
     
-    const pageFiles = [];
+    // Parallel download with controlled concurrency
+    console.log(`🚀 Starting parallel download of ${numberOfPages} pages...`);
     
-    // Download each page
-    for (let page = 1; page <= numberOfPages; page++) {
-      const tempPageFile = path.join(tempDir, `page_${page}.pdf`);
-      console.log(`📄 Downloading page ${page}/${numberOfPages}...`);
-      
+    const downloadPage = async (pageNum) => {
+      const tempPageFile = path.join(tempDir, `page_${pageNum}.pdf`);
       try {
-        await downloadSinglePage(fullImageUrl, page, tempPageFile, accessToken);
-        pageFiles.push(tempPageFile);
-        console.log(`✅ Downloaded page ${page}/${numberOfPages}`);
+        const startTime = Date.now();
+        console.log(`📄 Starting download of page ${pageNum}/${numberOfPages}...`);
+        await downloadSinglePage(fullImageUrl, pageNum, tempPageFile, accessToken);
+        const duration = Date.now() - startTime;
+        console.log(`✅ Downloaded page ${pageNum}/${numberOfPages} in ${duration}ms`);
+        return { pageNum, pageFile: tempPageFile, success: true };
       } catch (error) {
-        console.error(`❌ Failed to download page ${page}:`, error.message);
-        // Continue with other pages even if some fail
-        continue;
+        console.error(`❌ Failed to download page ${pageNum}:`, error.message);
+        return { pageNum, pageFile: null, success: false, error: error.message };
       }
+    };
+    
+    // Execute downloads in batches for controlled concurrency
+    const downloadResults = [];
+    const totalStartTime = Date.now();
+    
+    for (let i = 0; i < numberOfPages; i += MAX_CONCURRENT_DOWNLOADS) {
+      const batch = [];
+      const batchEnd = Math.min(i + MAX_CONCURRENT_DOWNLOADS, numberOfPages);
+      
+      console.log(`🔄 Processing batch: pages ${i + 1} to ${batchEnd}`);
+      
+      // Create batch of download promises
+      for (let page = i + 1; page <= batchEnd; page++) {
+        batch.push(downloadPage(page));
+      }
+      
+      // Execute batch in parallel
+      const batchResults = await Promise.allSettled(batch);
+      downloadResults.push(...batchResults);
+      
+      console.log(`✅ Completed batch: pages ${i + 1} to ${batchEnd}`);
     }
+    
+    const totalDownloadTime = Date.now() - totalStartTime;
+    console.log(`⏱️ Total download time: ${totalDownloadTime}ms for ${numberOfPages} pages`);
+    
+    // Process results and collect successful downloads
+    const pageFiles = [];
+    let successCount = 0;
+    let failCount = 0;
+    
+    downloadResults.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        pageFiles.push({ pageNum: result.value.pageNum, file: result.value.pageFile });
+        successCount++;
+      } else {
+        failCount++;
+        const pageNum = index + 1;
+        const error = result.status === 'rejected' ? result.reason : result.value.error;
+        console.error(`❌ Page ${pageNum} failed:`, error);
+      }
+    });
+    
+    console.log(`📊 Download summary: ${successCount} successful, ${failCount} failed out of ${numberOfPages} pages`);
     
     if (pageFiles.length === 0) {
       throw new Error('No pages were downloaded successfully');
     }
+    
+    // Sort pages by page number to ensure correct order in final PDF
+    pageFiles.sort((a, b) => a.pageNum - b.pageNum);
     
     console.log(`🔄 Merging ${pageFiles.length} PDF pages into single document...`);
     
     // Create a new PDF document for merging
     const mergedPDF = await PDFDocument.create();
     
-    // Add each page to the merged PDF
+    // Add each page to the merged PDF in correct order
     for (let i = 0; i < pageFiles.length; i++) {
-      const pageFile = pageFiles[i];
-      console.log(`📋 Processing page ${i + 1}/${pageFiles.length}: ${pageFile}`);
+      const pageInfo = pageFiles[i];
+      const pageFile = pageInfo.file;
+      const pageNum = pageInfo.pageNum;
+      
+      console.log(`📋 Processing page ${pageNum} (${i + 1}/${pageFiles.length}): ${pageFile}`);
       
       try {
         // Read the individual PDF file
         const pdfBytes = await fs.promises.readFile(pageFile);
-        console.log(`📖 Read ${pdfBytes.length} bytes from page ${i + 1}`);
+        console.log(`📖 Read ${pdfBytes.length} bytes from page ${pageNum}`);
         
         // Load the PDF document
         const pdf = await PDFDocument.load(pdfBytes);
@@ -751,10 +805,10 @@ async function downloadAllPages(fullImageUrl, numberOfPages, filePath, accessTok
           mergedPDF.addPage(page);
         });
         
-        console.log(`✅ Added page ${i + 1} to merged PDF`);
+        console.log(`✅ Added page ${pageNum} to merged PDF`);
         
       } catch (error) {
-        console.error(`❌ Failed to merge page ${i + 1}:`, error.message);
+        console.error(`❌ Failed to merge page ${pageNum}:`, error.message);
         // Continue with other pages
         continue;
       }
