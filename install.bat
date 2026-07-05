@@ -16,6 +16,8 @@ node --version
 
 echo.
 echo Installing npm dependencies...
+@echo off
+echo Installing CHIP-Patent Tools Dependencies...
 npm install
 
 if %errorlevel% neq 0 (

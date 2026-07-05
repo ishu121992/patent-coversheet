@@ -16,6 +16,7 @@ class PatentApp {
     init() {
         this.setupNavigation();
         this.setupProgressListeners();
+        this.setupMobileMenu();
         this.loadDefaultView();
     }
     
@@ -29,6 +30,37 @@ class PatentApp {
                     progressData.status, 
                     progressData.filePath
                 );
+            });
+        }
+    }
+    
+    setupMobileMenu() {
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        
+        if (mobileMenuBtn && sidebar && sidebarOverlay) {
+            // Toggle mobile menu
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('mobile-open');
+                sidebarOverlay.classList.toggle('show');
+            });
+            
+            // Close menu when overlay is clicked
+            sidebarOverlay.addEventListener('click', () => {
+                sidebar.classList.remove('mobile-open');
+                sidebarOverlay.classList.remove('show');
+            });
+            
+            // Close menu when nav button is clicked (mobile)
+            const navButtons = document.querySelectorAll('.nav-button');
+            navButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('mobile-open');
+                        sidebarOverlay.classList.remove('show');
+                    }
+                });
             });
         }
     }
@@ -54,6 +86,24 @@ class PatentApp {
         // Add active class to clicked button
         activeButton.classList.add('active');
     }
+    
+    syncNavigationState(viewName) {
+        // Find and activate the corresponding navigation button
+        const navButton = document.querySelector(`[data-view="${viewName}"]`);
+        if (navButton) {
+            this.setActiveButton(navButton);
+        }
+        
+        // Close mobile menu if open
+        if (window.innerWidth <= 768) {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebar-overlay');
+            if (sidebar && sidebarOverlay) {
+                sidebar.classList.remove('mobile-open');
+                sidebarOverlay.classList.remove('show');
+            }
+        }
+    }
 
     async loadView(viewName) {
         try {
@@ -65,6 +115,9 @@ class PatentApp {
                 this.contentBody.innerHTML = result.content;
                 this.updateTitle(viewName);
                 this.currentView = viewName;
+                
+                // Sync navigation state - set active button
+                this.syncNavigationState(viewName);
                 
                 // Initialize view-specific functionality
                 this.initializeViewFunctionality(viewName);
@@ -986,21 +1039,22 @@ class PatentApp {
 
     updateTitle(viewName) {
         const titles = {
+            'home': 'CHIP-Patent Tools',
             'download-publications': 'Download Patent Publications',
             'file-wrapper-download': 'USPTO File Wrapper Download',
             'generate-coversheet': 'Generate Granted Patent Coversheet',
             'settings': 'Settings'
         };
         
-        this.contentTitle.textContent = titles[viewName] || 'Patent Coversheet App';
+        this.contentTitle.textContent = titles[viewName] || 'CHIP-Patent Tools';
     }
 
     loadDefaultView() {
-        // Load settings view by default to encourage API key setup
+        // Load home view by default
         setTimeout(() => {
-            const settingsButton = document.querySelector('[data-view="settings"]');
-            if (settingsButton) {
-                settingsButton.click();
+            const homeButton = document.querySelector('[data-view="home"]');
+            if (homeButton) {
+                homeButton.click();
             }
         }, 100);
     }

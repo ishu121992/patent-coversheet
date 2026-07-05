@@ -3,17 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patent Coversheet App</title>
+    <title>CHIP-Patent Tools</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
+    <!-- Mobile menu button -->
+    <button class="mobile-menu-btn" id="mobile-menu-btn">☰</button>
+    
+    <!-- Sidebar overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
     <div class="app-container">
         <!-- Left Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h2>Patent Tools</h2>
+                <h2>CHIP-Patent Tools</h2>
             </div>
             <nav class="sidebar-nav">
+                <button class="nav-button active" data-view="home">
+                    <span class="nav-icon">🏠</span>
+                    Home
+                </button>
                 <button class="nav-button" data-view="download-publications">
                     <span class="nav-icon">📥</span>
                     Download Patent Publications
@@ -36,19 +46,10 @@
         <!-- Main Content Area -->
         <div class="main-content">
             <div class="content-header">
-                <h1 id="content-title">Welcome to Patent Coversheet App</h1>
+                <h1 id="content-title">CHIP-Patent Tools</h1>
             </div>
             <div class="content-body" id="content-body">
-                <div class="welcome-message">
-                    <h3>Get Started</h3>
-                    <p>Select an option from the sidebar to begin:</p>
-                    <ul>
-                        <li><strong>Download Patent Publications:</strong> Search and download patent documents</li>
-                        <li><strong>USPTO File Wrapper Download:</strong> Download file wrapper documents from USPTO applications</li>
-                        <li><strong>Generate Granted Patent Coversheet:</strong> Create professional coversheets for granted patents</li>
-                        <li><strong>Settings:</strong> Configure your API keys for USPTO and Espacenet</li>
-                    </ul>
-                </div>
+                <!-- Content will be loaded here -->
             </div>
         </div>
     </div>

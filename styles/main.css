@@ -17,6 +17,7 @@ body {
 .app-container {
     display: flex;
     height: 100vh;
+    position: relative;
 }
 
 /* Sidebar styles */
@@ -96,8 +97,295 @@ body {
 
 .content-body {
     flex: 1;
-    padding: 30px;
+    padding: 20px;
     overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Responsive content styles */
+.content-body * {
+    box-sizing: border-box;
+}
+
+/* Ensure all view containers expand to full width */
+.download-container,
+.file-wrapper-container,
+.coversheet-container,
+.settings-container,
+.home-container {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Override any fixed widths on main sections */
+.input-section,
+.publications-section,
+.wrapper-section,
+.results-section,
+.progress-section,
+.settings-section,
+.features-section,
+.getting-started-section,
+.tips-section {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+/* Ensure flex containers don't constrain width */
+.input-with-button,
+.radio-group,
+.publications-header,
+.publications-list {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Force full width on any remaining containers */
+* {
+    max-width: none !important;
+}
+
+/* But restore max-width for specific elements that need it */
+.sidebar {
+    max-width: 280px !important;
+}
+
+.mobile-menu-btn {
+    max-width: 60px !important;
+}
+
+.btn-small {
+    max-width: none !important;
+    width: auto !important;
+}
+
+.stat-item,
+.tip-card,
+.feature-card {
+    max-width: none !important;
+}
+
+/* Form and input responsiveness */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+input[type="text"], 
+input[type="number"], 
+textarea, 
+select {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus, 
+input[type="number"]:focus, 
+textarea:focus, 
+select:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+/* Button responsiveness */
+.btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    display: inline-block;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #2980b9;
+}
+
+.btn-secondary {
+    background-color: #95a5a6;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #7f8c8d;
+}
+
+.btn-success {
+    background-color: #27ae60;
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: #229954;
+}
+
+.btn-small {
+    padding: 0.5rem 1rem;
+    font-size: 12px;
+}
+
+.btn-large {
+    padding: 1rem 2rem;
+    font-size: 16px;
+}
+
+/* Container and layout responsiveness */
+.container {
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 15px;
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -15px;
+}
+
+.col {
+    flex: 1;
+    padding: 0 15px;
+    min-width: 0;
+}
+
+.col-half {
+    flex: 0 0 50%;
+    max-width: 50%;
+    padding: 0 15px;
+}
+
+/* Card and panel responsiveness */
+.card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e1e8ed;
+    background-color: #f8f9fa;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+.card-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* Progress and status elements */
+.progress-section {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.progress-item {
+    background: white;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.progress-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.progress-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.progress-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Table responsiveness */
+.table-container {
+    overflow-x: auto;
+    margin: 1rem 0;
+}
+
+.table {
+    width: 100%;
+    min-width: 600px;
+    border-collapse: collapse;
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Alert and message styles */
+.alert {
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.alert-error {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
 }
 
 /* Welcome message styles */
@@ -266,18 +554,511 @@ body {
     100% { transform: rotate(360deg); }
 }
 
-/* Responsive design */
+/* Mobile menu button */
+.mobile-menu-btn {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1001;
+    background: #2c3e50;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    font-size: 18px;
+}
+
+.mobile-menu-btn:hover {
+    background: #34495e;
+}
+
+/* Mobile overlay */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+}
+
+/* Home page styles */
+.home-container {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.welcome-section {
+    margin-bottom: 3rem;
+}
+
+.hero-banner {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3rem 2rem;
+    border-radius: 12px;
+    margin: 2rem;
+    text-align: center;
+}
+
+.hero-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.hero-subtitle {
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+    opacity: 0.9;
+}
+
+.hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-number {
+    display: block;
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.features-section {
+    margin: 2rem;
+}
+
+.section-title {
+    font-size: 2rem;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+    text-align: center;
+}
+
+.section-description {
+    text-align: center;
+    color: #7f8c8d;
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+.feature-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: 2px solid transparent;
+}
+
+.feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+    border-color: #3498db;
+}
+
+.feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.feature-title {
+    font-size: 1.3rem;
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.feature-description {
+    color: #7f8c8d;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+}
+
+.feature-highlights {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.highlight-tag {
+    background: #ecf0f1;
+    color: #2c3e50;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.feature-action {
+    text-align: center;
+    padding-top: 1rem;
+    border-top: 1px solid #ecf0f1;
+}
+
+.action-text {
+    color: #3498db;
+    font-weight: 600;
+}
+
+.getting-started-section {
+    background: #f8f9fa;
+    padding: 2rem;
+    border-radius: 12px;
+    margin: 2rem;
+}
+
+.steps-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.step-number {
+    background: #3498db;
+    color: white;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.step-content h4 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.step-content p {
+    color: #7f8c8d;
+    line-height: 1.6;
+}
+
+.tips-section {
+    margin: 2rem;
+}
+
+.tips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.tip-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.tip-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.tip-card h4 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.tip-card p {
+    color: #7f8c8d;
+    line-height: 1.5;
+    font-size: 0.9rem;
+}
+
+.footer-section {
+    background: #2c3e50;
+    color: white;
+    padding: 2rem;
+    text-align: center;
+    margin: 2rem;
+    border-radius: 12px;
+}
+
+.footer-text {
+    margin-bottom: 0.5rem;
+}
+
+.footer-version {
+    opacity: 0.7;
+    font-size: 0.9rem;
+}
+
+/* Comprehensive Responsive Design */
+
+/* Mobile devices (320px - 768px) */
 @media (max-width: 768px) {
+    .mobile-menu-btn {
+        display: block;
+    }
+    
     .sidebar {
-        width: 250px;
+        position: fixed;
+        left: -280px;
+        top: 0;
+        height: 100vh;
+        z-index: 1000;
+        transition: left 0.3s ease;
+    }
+    
+    .sidebar.mobile-open {
+        left: 0;
+    }
+    
+    .sidebar-overlay.show {
+        display: block;
+    }
+    
+    .main-content {
+        width: 100%;
+        margin-left: 0;
     }
     
     .content-header {
         padding: 15px 20px;
+        padding-left: 70px; /* Make room for menu button */
+    }
+    
+    .content-header h1 {
+        font-size: 1.4rem;
     }
     
     .content-body {
-        padding: 20px;
+        padding: 15px;
+    }
+    
+    /* Form and input mobile adjustments */
+    input[type="text"], 
+    input[type="number"], 
+    textarea, 
+    select {
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 0.75rem;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+    }
+    
+    /* Improve touch targets */
+    button, 
+    .btn, 
+    input[type="submit"], 
+    input[type="button"] {
+        min-height: 44px; /* iOS recommended touch target */
+        min-width: 44px;
+    }
+    
+    .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+        padding: 0.75rem;
+        font-size: 14px;
+    }
+    
+    .btn-small {
+        width: auto;
+        display: inline-block;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Column adjustments */
+    .col-half {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    .row {
+        margin: 0 -10px;
+    }
+    
+    .col, .col-half {
+        padding: 0 10px;
+    }
+    
+    /* Progress and status mobile adjustments */
+    .progress-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+    
+    .progress-details {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .progress-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    /* Table mobile responsiveness */
+    .table-container {
+        margin: 0.5rem -15px;
+        padding: 0 15px;
+    }
+    
+    .table {
+        font-size: 14px;
+        min-width: 500px;
+    }
+    
+    .table th,
+    .table td {
+        padding: 8px;
+    }
+    
+    /* Card mobile adjustments */
+    .card {
+        margin: 0 0 1rem 0;
+        border-radius: 6px;
+    }
+    
+    .card-header,
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .card-title {
+        font-size: 1.1rem;
+    }
+    
+    .hero-banner {
+        padding: 2rem 1rem;
+        margin: 1rem;
+    }
+    
+    .hero-title {
+        font-size: 2rem;
+    }
+    
+    .hero-subtitle {
+        font-size: 1rem;
+    }
+    
+    .hero-stats {
+        gap: 1rem;
+    }
+    
+    .features-section {
+        margin: 1rem;
+    }
+    
+    .feature-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .feature-card {
+        padding: 1.5rem;
+    }
+    
+    .getting-started-section {
+        margin: 1rem;
+        padding: 1.5rem;
+    }
+    
+    .steps-container {
+        gap: 1rem;
+    }
+    
+    .tips-section {
+        margin: 1rem;
+    }
+    
+    .tips-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .footer-section {
+        margin: 1rem;
+        padding: 1.5rem;
+    }
+}
+
+/* Tablet devices (769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .sidebar {
+        width: 260px;
+    }
+    
+    .hero-title {
+        font-size: 2.2rem;
+    }
+    
+    .feature-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .tips-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Large screens (1025px+) */
+@media (min-width: 1025px) {
+    .hero-stats {
+        gap: 3rem;
+    }
+    
+    .feature-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .tips-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Extra large screens (1440px+) */
+@media (min-width: 1440px) {
+    .home-container {
+        max-width: 1400px;
+    }
+    
+    .hero-banner {
+        padding: 4rem 3rem;
     }
 }
 
@@ -288,7 +1069,6 @@ body {
 
 .search-input {
     width: 100%;
-    max-width: 400px;
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 4px;

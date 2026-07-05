@@ -1,7 +1,7 @@
 {
-  "name": "patent-coversheet-app",
+  "name": "chip-patent-tools",
   "version": "1.0.0",
-  "description": "Electron app for patent publication downloads and coversheet generation",
+  "description": "CHIP-Patent Tools: Comprehensive patent document management and processing application",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
