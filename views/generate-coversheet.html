@@ -50,7 +50,6 @@
             <table class="results-table" id="coversheet-results-table">
                 <thead>
                     <tr>
-                        <th>Input App No.</th>
                         <th>Sony Ref</th>
                         <th>Your Ref</th>
                         <th>Appln No.</th>
@@ -69,7 +68,7 @@
                 </thead>
                 <tbody id="coversheet-results-body">
                     <tr class="empty-row">
-                        <td colspan="15">Run extraction to see results.</td>
+                        <td colspan="14">Run extraction to see results.</td>
                     </tr>
                 </tbody>
             </table>
@@ -238,22 +237,25 @@
     margin-top: 12px;
     border: 1px solid #eef2f5;
     border-radius: 6px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .results-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 1400px;
+    table-layout: fixed;
 }
 
 .results-table th,
 .results-table td {
     border-bottom: 1px solid #eef2f5;
-    padding: 10px;
+    padding: 8px;
     text-align: left;
     font-size: 12px;
-    white-space: nowrap;
+    white-space: normal;
+    word-break: break-word;
+    vertical-align: top;
 }
 
 .results-table th {
@@ -302,10 +304,25 @@
 }
 
 .btn.btn-link {
+    display: inline-flex;
+    align-items: center;
     background: transparent;
     border: 1px solid #d7e2ec;
     color: #1f5fa6;
-    padding: 5px 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.results-table th:nth-last-child(2),
+.results-table td:nth-last-child(2) {
+    width: 92px;
+}
+
+.results-table th:last-child,
+.results-table td:last-child {
+    width: 118px;
 }
 
 .details-modal {
@@ -533,7 +550,7 @@
     }
 
     function clearResults() {
-        resultsBody.innerHTML = '<tr class="empty-row"><td colspan="15">Run extraction to see results.</td></tr>';
+        resultsBody.innerHTML = '<tr class="empty-row"><td colspan="14">Run extraction to see results.</td></tr>';
         errorsBox.classList.add('hidden');
         errorsBox.innerHTML = '';
         lastSuccessfulRows = [];
@@ -640,7 +657,7 @@
         generateBtn.disabled = extractedRows.length === 0;
 
         if (extractedRows.length === 0) {
-            resultsBody.innerHTML = '<tr class="empty-row"><td colspan="15">No successful records returned.</td></tr>';
+            resultsBody.innerHTML = '<tr class="empty-row"><td colspan="14">No successful records returned.</td></tr>';
         } else {
             resultsBody.innerHTML = extractedRows.map(function (item) {
                 const f = item.formatted || {};
@@ -649,7 +666,6 @@
                 const statusLabel = isGenerated ? 'Generated' : 'Extracted';
                 const statusClass = isGenerated ? 'status-badge status-badge-generated' : 'status-badge status-badge-extracted';
                 return '<tr>'
-                    + '<td>' + (item.inputApplicationNumber || '') + '</td>'
                     + '<td>' + (f.sony_ref || 'NA') + '</td>'
                     + '<td>' + (f.your_ref || 'NA') + '</td>'
                     + '<td>' + (f.appln_no || 'NA') + '</td>'

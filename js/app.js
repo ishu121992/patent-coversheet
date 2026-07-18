@@ -937,12 +937,36 @@ class PatentApp {
         this.showAlert('Coversheet generation functionality will be implemented here.', 'info');
     }
 
+    normalizeApplicationNumberInput(rawValue) {
+        const digitsOnly = String(rawValue || '').replace(/\D/g, '');
+        return {
+            digitsOnly,
+            isValidLength: digitsOnly.length === 8,
+            isEmpty: digitsOnly.length === 0,
+            isTooLong: digitsOnly.length > 8
+        };
+    }
+
     async fetchFileWrapperDocuments(applicationInput, documentsSection, documentsList, documentsData) {
-        const appNumber = applicationInput.value.trim();
-        if (!appNumber) {
+        const rawValue = applicationInput.value.trim();
+        const normalized = this.normalizeApplicationNumberInput(rawValue);
+
+        if (normalized.isEmpty) {
             this.showAlert('Please enter an application number', 'error');
             return;
         }
+
+        if (!normalized.isValidLength) {
+            if (normalized.isTooLong) {
+                this.showAlert('Application number must be 8 digits (examples: 18045436, 18/045,436, US18/045,436).', 'error');
+            } else {
+                this.showAlert('Application number is incomplete. Please enter all 8 digits.', 'error');
+            }
+            return;
+        }
+
+        const appNumber = normalized.digitsOnly;
+        applicationInput.value = appNumber;
         
         try {
             // Show loading state

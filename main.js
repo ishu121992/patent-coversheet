@@ -5,7 +5,7 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 const { spawnSync } = require('child_process');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFNumber, PDFHexString } = require('pdf-lib');
 const JSZip = require('jszip');
 const canvasBindings = require('@napi-rs/canvas');
 const { createCanvas } = canvasBindings;
@@ -345,10 +345,6 @@ ipcMain.handle('download-patent', async (event, options) => {
       return { success: false, message: 'Download directory not configured. Please set it in Settings.' };
     }
     
-    if (!apiKeys.espacenetConsumerKey || !apiKeys.espacenetSecretKey) {
-      return { success: false, message: 'Espacenet API keys not configured' };
-    }
-    
     // Download the patent
     const downloadResult = await downloadPatentFromEPO(
       publicationNumber, 
@@ -435,11 +431,19 @@ ipcMain.handle('show-item-in-folder', async (event, filePath) => {
 
 // IPC handler for fetching USPTO file wrapper documents
 ipcMain.handle('fetch-file-wrapper-documents', async (event, applicationNumber) => {
+  let formattedAppNum = String(applicationNumber || '').replace(/\D/g, '');
+  let usptoApiKey = '';
+
   try {
     console.log('Fetching file wrapper documents for application:', applicationNumber);
     
     // Format application number (remove any non-digits and pad to 8 digits)
-    const formattedAppNum = applicationNumber.replace(/\D/g, '').padStart(8, '0');
+    const digitsOnly = String(applicationNumber || '').replace(/\D/g, '');
+    if (digitsOnly.length !== 8) {
+      return { success: false, message: 'Application number must contain exactly 8 digits.' };
+    }
+
+    formattedAppNum = digitsOnly;
     console.log('Formatted application number:', formattedAppNum);
     
     // Load USPTO API key
@@ -451,7 +455,7 @@ ipcMain.handle('fetch-file-wrapper-documents', async (event, applicationNumber) 
       return { success: false, message: 'USPTO API key not configured. Please set it in Settings.' };
     }
     
-    const usptoApiKey = apiKeysResult.data.usptoApiKey;
+    usptoApiKey = apiKeysResult.data.usptoApiKey;
     console.log('Using USPTO API key:', usptoApiKey.substring(0, 8) + '...' + usptoApiKey.substring(usptoApiKey.length - 4));
     
     // Validate API key format
@@ -462,15 +466,103 @@ ipcMain.handle('fetch-file-wrapper-documents', async (event, applicationNumber) 
     
     // Fetch documents from USPTO API
     const documents = await fetchUsptoFileWrapperDocuments(formattedAppNum, usptoApiKey);
+
+    if (!Array.isArray(documents) || documents.length === 0) {
+      return {
+        success: false,
+        message: await buildFileWrapperFetchErrorMessage(null, formattedAppNum, usptoApiKey, true)
+      };
+    }
     
     console.log(`âœ… Successfully fetched ${documents.length} documents`);
     return { success: true, documents: documents };
     
   } catch (error) {
     console.error('âŒ Error fetching file wrapper documents:', error);
-    return { success: false, message: 'Failed to fetch documents: ' + error.message };
+    let mappedMessage = '';
+
+    if (usptoApiKey) {
+      mappedMessage = await buildFileWrapperFetchErrorMessage(error, formattedAppNum || 'unknown', usptoApiKey);
+    } else {
+      mappedMessage = `Failed to fetch file wrapper documents${formattedAppNum ? ` for ${formattedAppNum}` : ''}: ${error?.message || 'Unknown error'}`;
+    }
+
+    return { success: false, message: mappedMessage };
   }
 });
+
+async function getApplicationSearchContext(applicationNumber, apiKey) {
+  try {
+    const payload = {
+      q: `applicationNumberText:${applicationNumber}`,
+      pagination: {
+        offset: 0,
+        limit: 1
+      }
+    };
+
+    const data = await usptoRequestJson('POST', '/api/v1/patent/applications/search', apiKey, payload);
+    if (!data || Number(data.count || 0) === 0) {
+      return { exists: false };
+    }
+
+    const first = data.patentFileWrapperDataBag?.[0] || {};
+    const meta = first.applicationMetaData || {};
+    return {
+      exists: true,
+      earliestPublicationNumber: meta.earliestPublicationNumber || '',
+      earliestPublicationDate: meta.earliestPublicationDate || '',
+      statusCode: meta.applicationStatusCode || '',
+      statusText: meta.applicationStatusDescriptionText || ''
+    };
+  } catch (error) {
+    return { exists: null, lookupError: error.message };
+  }
+}
+
+async function buildFileWrapperFetchErrorMessage(error, applicationNumber, apiKey, emptyDocuments = false) {
+  const raw = String(error?.message || '');
+
+  if (
+    /HTTP 403|forbidden|invalid.*api key|api key/i.test(raw)
+  ) {
+    return 'USPTO access was denied. Please verify your USPTO API key in Settings.';
+  }
+
+  if (
+    /HTTP 5\d\d|request timeout|network error|ECONN|EAI_AGAIN|ENOTFOUND|ETIMEDOUT/i.test(raw)
+  ) {
+    return `USPTO service is currently unavailable for application ${applicationNumber}. Please retry shortly.`;
+  }
+
+  if (emptyDocuments || /HTTP 404|No matching records found|Application not found/i.test(raw)) {
+    const context = await getApplicationSearchContext(applicationNumber, apiKey);
+
+    if (context.exists === false) {
+      return `No USPTO record found for application ${applicationNumber}. Please verify the number.`;
+    }
+
+    if (context.exists === true) {
+      const statusSuffix = context.statusText
+        ? ` Current status: ${context.statusText}${context.statusCode ? ` [${context.statusCode}]` : ''}.`
+        : '';
+
+      if (!context.earliestPublicationNumber) {
+        return `File wrapper is not available for application ${applicationNumber} yet. This is commonly because the application is not published.${statusSuffix}`;
+      }
+
+      return `File wrapper documents are not available for application ${applicationNumber} right now.${statusSuffix}`;
+    }
+
+    return `File wrapper could not be retrieved for application ${applicationNumber}. It may be unpublished or temporarily unavailable from USPTO.`;
+  }
+
+  if (raw) {
+    return `Failed to fetch file wrapper documents for ${applicationNumber}: ${raw}`;
+  }
+
+  return `Failed to fetch file wrapper documents for ${applicationNumber}.`;
+}
 
 // IPC handler for downloading USPTO file wrapper documents
 ipcMain.handle('download-file-wrapper-documents', async (event, options) => {
@@ -874,6 +966,12 @@ function toPpubIdentifier(publicationNumber) {
   return numeric;
 }
 
+function isUsPublishedApplicationPublication(publicationNumber) {
+  const normalized = normalizePublicationNumber(publicationNumber);
+  // Published application kinds are typically A* (A1, A9, etc.).
+  return /^US\d+A\d?$/i.test(normalized);
+}
+
 async function downloadBufferFromUrlWithHeaders(url, headers = {}, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
@@ -928,6 +1026,54 @@ async function extractFirstPagePdfBuffer(pdfBuffer) {
   const [firstPage] = await outPdf.copyPages(inputPdf, [0]);
   outPdf.addPage(firstPage);
   return Buffer.from(await outPdf.save());
+}
+
+async function writePublicationPdfBuffer(pdfBuffer, publicationNumber, settings) {
+  const { downloadDirectory, filenameFormat, createSubfolders } = settings;
+
+  let targetDir = downloadDirectory;
+  if (createSubfolders) {
+    const countryCode = String(publicationNumber || '').toUpperCase().substring(0, 2) || 'US';
+    targetDir = path.join(downloadDirectory, countryCode);
+    if (!fs.existsSync(targetDir)) {
+      await fs.promises.mkdir(targetDir, { recursive: true });
+    }
+  }
+
+  const filename = generateFilename(publicationNumber, filenameFormat);
+  const filePath = path.join(targetDir, filename);
+  await fs.promises.writeFile(filePath, pdfBuffer);
+  return filePath;
+}
+
+async function downloadUsPublicationFromPpub(publicationNumber, downloadType, settings) {
+  const normalized = normalizePublicationNumber(publicationNumber);
+  const ppubId = toPpubIdentifier(normalized);
+
+  if (!ppubId) {
+    throw new Error(`Invalid US publication number for PPUB fallback: ${publicationNumber}`);
+  }
+
+  const ppubUrl = `https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/${ppubId}`;
+  const fullPdfBuffer = await downloadBufferFromUrlWithHeaders(ppubUrl, {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  });
+
+  if (!fullPdfBuffer || fullPdfBuffer.length < 5 || fullPdfBuffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new Error(`PPUB fallback did not return a valid PDF for ${normalized}`);
+  }
+
+  const outputBuffer = downloadType === 'frontpage'
+    ? await extractFirstPagePdfBuffer(fullPdfBuffer)
+    : fullPdfBuffer;
+
+  const filePath = await writePublicationPdfBuffer(outputBuffer, normalized, settings);
+  return {
+    success: true,
+    message: `Downloaded ${normalized} (${downloadType}) using USPTO PPUB fallback to ${filePath}`,
+    filePath,
+    source: 'USPTO-PPUB-FALLBACK'
+  };
 }
 
 async function downloadPublishedApplicationFrontPageBufferFromUspto(applicationNumber, usptoApiKey) {
@@ -1936,6 +2082,8 @@ let globalAccessToken = null;
 let globalTokenExpiry = null;
 
 async function downloadPatentFromEPO(publicationNumber, downloadType, settings, apiKeys) {
+  const normalizedPublication = normalizePublicationNumber(publicationNumber);
+
   try {
     console.log('=== EPO Download Process Started ===');
     console.log('Publication Number:', publicationNumber);
@@ -1964,7 +2112,7 @@ async function downloadPatentFromEPO(publicationNumber, downloadType, settings, 
     const downloadResult = await downloadEPODocument(
       documentInfo, 
       downloadType, 
-      publicationNumber, 
+      normalizedPublication, 
       settings, 
       token
     );
@@ -1974,6 +2122,20 @@ async function downloadPatentFromEPO(publicationNumber, downloadType, settings, 
   } catch (error) {
     console.error('âŒ EPO download error for', publicationNumber, ':', error);
     console.error('Error stack:', error.stack);
+
+    if (isUsPublishedApplicationPublication(normalizedPublication)) {
+      try {
+        console.log('âš ï¸ EPO path failed; trying USPTO PPUB fallback for', normalizedPublication);
+        return await downloadUsPublicationFromPpub(normalizedPublication, downloadType, settings);
+      } catch (fallbackError) {
+        console.error('âŒ USPTO PPUB fallback failed for', normalizedPublication, ':', fallbackError);
+        return {
+          success: false,
+          message: `EPO download failed and USPTO PPUB fallback also failed for ${normalizedPublication}: ${fallbackError.message}`
+        };
+      }
+    }
+
     return { success: false, message: error.message };
   }
 }
@@ -3074,6 +3236,74 @@ async function downloadFileWrapperAsZipParallel(documents, downloadDir, usptoApi
   return zipFilePath;
 }
 
+function formatFileWrapperBookmarkTitle(documentInfo, fallbackIndex) {
+  const code = String(documentInfo?.documentCode || `DOC-${fallbackIndex + 1}`).trim();
+  const description = String(documentInfo?.documentCodeDescriptionText || documentInfo?.documentDescription || '').trim();
+  const date = String(documentInfo?.officialDate || '').trim();
+
+  let title = code;
+  if (description) {
+    title += ` - ${description}`;
+  }
+  if (date) {
+    title += ` (${date})`;
+  }
+  return title;
+}
+
+function addOutlineBookmarksToPdf(pdfDoc, bookmarks) {
+  if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
+    return;
+  }
+
+  const context = pdfDoc.context;
+  const outlinesRef = context.register(context.obj({
+    Type: PDFName.of('Outlines')
+  }));
+
+  const validBookmarks = bookmarks.filter((entry) => {
+    return Number.isInteger(entry?.pageIndex) && entry.pageIndex >= 0 && entry.pageIndex < pdfDoc.getPageCount();
+  });
+
+  if (validBookmarks.length === 0) {
+    return;
+  }
+
+  const itemRefs = [];
+
+  for (let i = 0; i < validBookmarks.length; i++) {
+    const entry = validBookmarks[i];
+    const page = pdfDoc.getPage(entry.pageIndex);
+    const title = String(entry.title || `Document ${i + 1}`).trim();
+
+    const itemRef = context.register(context.obj({
+      Title: PDFHexString.fromText(title),
+      Parent: outlinesRef,
+      Dest: context.obj([page.ref, PDFName.of('Fit')])
+    }));
+
+    itemRefs.push(itemRef);
+  }
+
+  for (let i = 0; i < itemRefs.length; i++) {
+    const itemDict = context.lookup(itemRefs[i]);
+    if (i > 0) {
+      itemDict.set(PDFName.of('Prev'), itemRefs[i - 1]);
+    }
+    if (i < itemRefs.length - 1) {
+      itemDict.set(PDFName.of('Next'), itemRefs[i + 1]);
+    }
+  }
+
+  const outlinesDict = context.lookup(outlinesRef);
+  outlinesDict.set(PDFName.of('First'), itemRefs[0]);
+  outlinesDict.set(PDFName.of('Last'), itemRefs[itemRefs.length - 1]);
+  outlinesDict.set(PDFName.of('Count'), PDFNumber.of(itemRefs.length));
+
+  pdfDoc.catalog.set(PDFName.of('Outlines'), outlinesRef);
+  pdfDoc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+}
+
 async function downloadFileWrapperAsMergedParallel(documents, downloadDir, usptoApiKey, event = null) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
   const mergedFileName = `USPTO_FileWrapper_Merged_${timestamp}.pdf`;
@@ -3092,6 +3322,7 @@ async function downloadFileWrapperAsMergedParallel(documents, downloadDir, uspto
   
   // Create new PDF document for merging
   const mergedPDF = await PDFDocument.create();
+  const bookmarkEntries = [];
   
   // Create download promises with controlled concurrency (limit to 5 concurrent downloads)
   const maxConcurrency = 5;
@@ -3157,6 +3388,8 @@ async function downloadFileWrapperAsMergedParallel(documents, downloadDir, uspto
     const pdfData = downloadedPdfs[i];
     if (pdfData && pdfData.success) {
       try {
+        const firstPageIndexInMerged = mergedPDF.getPageCount();
+
         // Copy all pages from this PDF to the merged PDF
         const pageIndices = Array.from({ length: pdfData.pdf.getPageCount() }, (_, j) => j);
         const copiedPages = await mergedPDF.copyPages(pdfData.pdf, pageIndices);
@@ -3165,12 +3398,27 @@ async function downloadFileWrapperAsMergedParallel(documents, downloadDir, uspto
         copiedPages.forEach((page) => {
           mergedPDF.addPage(page);
         });
+
+        if (copiedPages.length > 0) {
+          bookmarkEntries.push({
+            title: formatFileWrapperBookmarkTitle(documents[i], i),
+            pageIndex: firstPageIndexInMerged
+          });
+        }
         
         console.log(`Added ${pdfData.pdf.getPageCount()} pages from ${pdfData.documentCode}`);
       } catch (error) {
         console.error(`Failed to merge document ${pdfData.documentCode}:`, error.message);
       }
     }
+  }
+
+  // Add PDF outline bookmarks for each source document first page.
+  try {
+    addOutlineBookmarksToPdf(mergedPDF, bookmarkEntries);
+    console.log(`Added ${bookmarkEntries.length} outline bookmark(s) to merged PDF`);
+  } catch (bookmarkError) {
+    console.warn('Failed to add bookmarks to merged PDF:', bookmarkError.message);
   }
   
   // Save the merged PDF

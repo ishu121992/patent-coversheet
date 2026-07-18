@@ -1,151 +1,101 @@
-<div class="home-container">
-    <div class="welcome-section">
-        <div class="hero-banner">
-            <div class="hero-content">
-                <h1 class="hero-title">🏠 CHIP-Patent Tools</h1>
-                <p class="hero-subtitle">Your comprehensive toolkit for patent document management and processing</p>
-                <div class="hero-stats">
-                    <div class="stat-item">
-                        <span class="stat-number">4</span>
-                        <span class="stat-label">Tools Available</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-number">USPTO</span>
-                        <span class="stat-label">API Integrated</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-number">PDF</span>
-                        <span class="stat-label">Processing</span>
-                    </div>
-                </div>
-            </div>
+<div class="home-simple-container">
+    <section class="home-simple-hero">
+        <h2>Welcome to CHIP-Patent Tools</h2>
+        <p>A single workspace to download publications, fetch file wrappers, and generate granted-patent coversheets.</p>
+    </section>
+
+    <section class="home-simple-tools">
+        <h3>Tools</h3>
+        <div class="home-simple-list">
+            <button class="home-simple-item" type="button" onclick="window.patentApp.loadView('download-publications')">
+                <span class="tool-name">Download Patent Publications</span>
+                <span class="tool-desc">Download front page or full publication PDFs by publication number.</span>
+            </button>
+
+            <button class="home-simple-item" type="button" onclick="window.patentApp.loadView('file-wrapper-download')">
+                <span class="tool-name">USPTO File Wrapper Download</span>
+                <span class="tool-desc">Fetch application file-wrapper documents and export as ZIP or merged PDF.</span>
+            </button>
+
+            <button class="home-simple-item" type="button" onclick="window.patentApp.loadView('generate-coversheet')">
+                <span class="tool-name">Generate Granted Patent Coversheet</span>
+                <span class="tool-desc">Extract issued-patent data and generate coversheet and Letters Patent output files.</span>
+            </button>
+
+            <button class="home-simple-item" type="button" onclick="window.patentApp.loadView('settings')">
+                <span class="tool-name">Settings</span>
+                <span class="tool-desc">Configure API keys, templates, and download/output folders.</span>
+            </button>
         </div>
-    </div>
-
-    <div class="features-section">
-        <h2 class="section-title">🚀 Quick Start Guide</h2>
-        <p class="section-description">Get started with these powerful patent tools designed to streamline your workflow</p>
-        
-        <div class="feature-grid">
-            <div class="feature-card" onclick="window.patentApp.loadView('download-publications')">
-                <div class="feature-icon">📥</div>
-                <h3 class="feature-title">Download Patent Publications</h3>
-                <p class="feature-description">Search and download patent documents by publication number with enhanced progress tracking</p>
-                <div class="feature-highlights">
-                    <span class="highlight-tag">✨ Bulk Downloads</span>
-                    <span class="highlight-tag">📊 Progress Tracking</span>
-                    <span class="highlight-tag">🔄 Real-time Updates</span>
-                </div>
-                <div class="feature-action">
-                    <span class="action-text">Click to start →</span>
-                </div>
-            </div>
-
-            <div class="feature-card" onclick="window.patentApp.loadView('file-wrapper-download')">
-                <div class="feature-icon">📂</div>
-                <h3 class="feature-title">USPTO File Wrapper Download</h3>
-                <p class="feature-description">Access complete USPTO application file wrappers with parallel processing for faster downloads</p>
-                <div class="feature-highlights">
-                    <span class="highlight-tag">⚡ Parallel Processing</span>
-                    <span class="highlight-tag">📋 Document Selection</span>
-                    <span class="highlight-tag">🗜️ ZIP & PDF Merge</span>
-                </div>
-                <div class="feature-action">
-                    <span class="action-text">Click to start →</span>
-                </div>
-            </div>
-
-            <div class="feature-card" onclick="window.patentApp.loadView('generate-coversheet')">
-                <div class="feature-icon">📄</div>
-                <h3 class="feature-title">Generate Granted Patent Coversheet</h3>
-                <p class="feature-description">Create professional coversheets for granted patents with automated data retrieval</p>
-                <div class="feature-highlights">
-                    <span class="highlight-tag">🎨 Professional Design</span>
-                    <span class="highlight-tag">🤖 Auto Data Fill</span>
-                    <span class="highlight-tag">📋 Custom Templates</span>
-                </div>
-                <div class="feature-action">
-                    <span class="action-text">Click to start →</span>
-                </div>
-            </div>
-
-            <div class="feature-card" onclick="window.patentApp.loadView('settings')">
-                <div class="feature-icon">⚙️</div>
-                <h3 class="feature-title">Settings & Configuration</h3>
-                <p class="feature-description">Configure your API keys and download preferences for optimal performance</p>
-                <div class="feature-highlights">
-                    <span class="highlight-tag">🔑 API Keys</span>
-                    <span class="highlight-tag">📁 Download Paths</span>
-                    <span class="highlight-tag">🔧 Preferences</span>
-                </div>
-                <div class="feature-action">
-                    <span class="action-text">Click to start →</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="getting-started-section">
-        <div class="getting-started-content">
-            <h2 class="section-title">🎯 Getting Started</h2>
-            <div class="steps-container">
-                <div class="step-item">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <h4>Configure Settings</h4>
-                        <p>First, set up your <strong>USPTO API key</strong> and <strong>download directory</strong> in Settings to enable all features</p>
-                    </div>
-                </div>
-                <div class="step-item">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <h4>Choose Your Tool</h4>
-                        <p>Select from patent downloads, file wrapper access, or coversheet generation based on your needs</p>
-                    </div>
-                </div>
-                <div class="step-item">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <h4>Process Documents</h4>
-                        <p>Use the intuitive interface to search, select, and process your patent documents efficiently</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="tips-section">
-        <h2 class="section-title">💡 Pro Tips</h2>
-        <div class="tips-grid">
-            <div class="tip-card">
-                <div class="tip-icon">🔑</div>
-                <h4>API Key Setup</h4>
-                <p>Make sure to configure your USPTO API key in Settings before using download features</p>
-            </div>
-            <div class="tip-card">
-                <div class="tip-icon">📊</div>
-                <h4>Progress Tracking</h4>
-                <p>Monitor download progress with real-time updates and document-by-document status</p>
-            </div>
-            <div class="tip-card">
-                <div class="tip-icon">⚡</div>
-                <h4>Parallel Downloads</h4>
-                <p>File wrapper downloads use parallel processing for up to 5x faster bulk downloads</p>
-            </div>
-            <div class="tip-card">
-                <div class="tip-icon">📁</div>
-                <h4>File Management</h4>
-                <p>Access downloaded files instantly with "Open File" and "Show in Folder" buttons</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="footer-section">
-        <div class="footer-content">
-            <p class="footer-text">
-                <strong>Patent Coversheet App</strong> - Built for patent professionals to streamline document workflows
-            </p>
-            <p class="footer-version">Version 1.0.0 | Electron App</p>
-        </div>
-    </div>
+    </section>
 </div>
+
+<style>
+.home-simple-container {
+    max-width: 920px;
+}
+
+.home-simple-hero,
+.home-simple-tools {
+    background: #ffffff;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.home-simple-tools {
+    margin-top: 16px;
+}
+
+.home-simple-hero h2,
+.home-simple-tools h3 {
+    margin: 0 0 8px;
+    color: #2c3e50;
+}
+
+.home-simple-hero p {
+    margin: 0;
+    color: #4c5a67;
+    line-height: 1.45;
+}
+
+.home-simple-list {
+    display: grid;
+    gap: 10px;
+}
+
+.home-simple-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid #e6edf4;
+    background: #f9fbfd;
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    display: grid;
+    gap: 4px;
+}
+
+.home-simple-item:hover {
+    background: #f3f8fc;
+    border-color: #d7e7f5;
+}
+
+.tool-name {
+    font-weight: 600;
+    color: #1f2d3d;
+}
+
+.tool-desc {
+    font-size: 13px;
+    color: #556575;
+}
+
+@media (max-width: 768px) {
+    .home-simple-hero,
+    .home-simple-tools {
+        padding: 16px;
+    }
+}
+</style>

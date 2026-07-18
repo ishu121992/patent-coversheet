@@ -119,19 +119,26 @@
 
 .radio-group {
     display: flex;
-    gap: 20px;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
 .radio-label {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     cursor: pointer;
     font-size: 14px;
     gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid #e2e8ee;
+    border-radius: 6px;
+    background: #ffffff;
+    min-height: 40px;
+    white-space: nowrap;
 }
 
 .radio-custom {
+    flex: 0 0 16px;
     width: 18px;
     height: 18px;
     border: 2px solid #ddd;
@@ -145,6 +152,11 @@
 
 .radio-label input[type="radio"]:checked + .radio-custom {
     border-color: #3498db;
+}
+
+.radio-label:has(input[type="radio"]:checked) {
+    border-color: #b8d7f3;
+    background: #f5faff;
 }
 
 .radio-label input[type="radio"]:checked + .radio-custom::after {
