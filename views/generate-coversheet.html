@@ -31,7 +31,10 @@
 
         <div class="extract-actions">
             <span id="coversheet-app-count">0 applications selected</span>
-            <button type="button" id="extract-coversheet-data" class="btn btn-success" disabled>Extract Coversheet Data</button>
+            <div class="action-buttons-group">
+                <button type="button" id="extract-coversheet-data" class="btn btn-success" disabled>Extract Coversheet Data</button>
+                <button type="button" id="generate-coversheet-files" class="btn btn-primary" disabled>Generate Coversheet Files</button>
+            </div>
         </div>
 
         <div id="coversheet-extract-status" class="extract-status hidden"></div>
@@ -133,6 +136,12 @@
 .extract-actions .btn,
 .input-with-button .btn {
     flex-shrink: 0;
+}
+
+.action-buttons-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .application-list {
@@ -294,10 +303,12 @@
     const list = document.getElementById('coversheet-applications-list');
     const countLabel = document.getElementById('coversheet-app-count');
     const extractBtn = document.getElementById('extract-coversheet-data');
+    const generateBtn = document.getElementById('generate-coversheet-files');
     const status = document.getElementById('coversheet-extract-status');
     const resultsBody = document.getElementById('coversheet-results-body');
     const errorsBox = document.getElementById('coversheet-errors');
     const clearResultsBtn = document.getElementById('clear-coversheet-results');
+    let lastSuccessfulRows = [];
 
     function cleanNumber(value) {
         return String(value || '').replace(/\D/g, '');
@@ -372,11 +383,15 @@
         resultsBody.innerHTML = '<tr class="empty-row"><td colspan="13">Run extraction to see results.</td></tr>';
         errorsBox.classList.add('hidden');
         errorsBox.innerHTML = '';
+        lastSuccessfulRows = [];
+        generateBtn.disabled = true;
     }
 
     function renderResults(data) {
         const successRows = data.results.filter(function (r) { return r.success; });
         const failedRows = data.results.filter(function (r) { return !r.success; });
+        lastSuccessfulRows = successRows;
+        generateBtn.disabled = successRows.length === 0;
 
         if (successRows.length === 0) {
             resultsBody.innerHTML = '<tr class="empty-row"><td colspan="13">No successful records returned.</td></tr>';
@@ -441,6 +456,44 @@
         }
     }
 
+    async function generateCoversheetFiles() {
+        if (!window.electronAPI || !window.electronAPI.generateCoversheetFiles) {
+            setStatus('Generate coversheet API is not available. Restart the app.', true);
+            return;
+        }
+
+        if (lastSuccessfulRows.length === 0) {
+            setStatus('Run extraction first to generate coversheet files.', true);
+            return;
+        }
+
+        generateBtn.disabled = true;
+        setStatus('Generating coversheet files for ' + lastSuccessfulRows.length + ' record(s)...', false);
+
+        try {
+            const response = await window.electronAPI.generateCoversheetFiles(lastSuccessfulRows);
+            if (!response.success) {
+                setStatus(response.message || 'Failed to generate coversheet files.', true);
+                return;
+            }
+
+            const successCount = (response.files || []).length;
+            const failCount = (response.failures || []).length;
+            setStatus('Coversheet generation complete. Created: ' + successCount + ', Failed: ' + failCount + '.', failCount > 0);
+
+            if (failCount > 0) {
+                errorsBox.classList.remove('hidden');
+                errorsBox.innerHTML = '<h5>Generation Failures</h5><ul>' + response.failures.map(function (item) {
+                    return '<li>' + (item.docket || item.inputApplicationNumber || 'Unknown') + ': ' + (item.message || 'Unknown error') + '</li>';
+                }).join('') + '</ul>';
+            }
+        } catch (error) {
+            setStatus('Failed to generate coversheet files: ' + error.message, true);
+        } finally {
+            generateBtn.disabled = lastSuccessfulRows.length === 0;
+        }
+    }
+
     addBtn.addEventListener('click', addApplication);
 
     input.addEventListener('keypress', function (event) {
@@ -476,6 +529,7 @@
     });
 
     extractBtn.addEventListener('click', extractData);
+    generateBtn.addEventListener('click', generateCoversheetFiles);
 
     renderList();
     clearResults();

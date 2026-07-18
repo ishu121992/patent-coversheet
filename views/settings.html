@@ -104,6 +104,46 @@
                 </small>
             </div>
 
+            <div class="form-group">
+                <label for="coversheet-template-path">Coversheet Template (Excel)</label>
+                <div class="directory-input-group">
+                    <input
+                        type="text"
+                        id="coversheet-template-path"
+                        name="coversheetTemplatePath"
+                        placeholder="Select coversheet template file (.xlsx/.xlsm)..."
+                        readonly
+                        class="directory-input"
+                    >
+                    <button type="button" id="browse-coversheet-template" class="btn btn-secondary">
+                        Browse
+                    </button>
+                </div>
+                <small class="form-help">
+                    This template will be populated from cell D5 onward.
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="coversheet-output-directory">Coversheet Output Folder</label>
+                <div class="directory-input-group">
+                    <input
+                        type="text"
+                        id="coversheet-output-directory"
+                        name="coversheetOutputDirectory"
+                        placeholder="Select folder to save generated coversheets..."
+                        readonly
+                        class="directory-input"
+                    >
+                    <button type="button" id="browse-coversheet-output" class="btn btn-secondary">
+                        Browse
+                    </button>
+                </div>
+                <small class="form-help">
+                    Output files will be named like: Docket Cover.xlsx
+                </small>
+            </div>
+
             <div class="form-actions">
                 <button type="button" id="save-download-settings" class="btn btn-primary">
                     Save Download Settings

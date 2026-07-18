@@ -257,6 +257,56 @@ class PatentApp {
             });
         }
 
+        // Browse coversheet template file
+        const browseTemplateButton = document.getElementById('browse-coversheet-template');
+        if (browseTemplateButton) {
+            browseTemplateButton.addEventListener('click', async () => {
+                if (!window.electronAPI || !window.electronAPI.selectCoversheetTemplateFile) {
+                    this.showAlert('Template file selection is not available.', 'error');
+                    return;
+                }
+
+                try {
+                    const result = await window.electronAPI.selectCoversheetTemplateFile();
+                    if (result.success && result.filePath) {
+                        const input = document.getElementById('coversheet-template-path');
+                        if (input) {
+                            input.value = result.filePath;
+                            await this.autoSaveCoversheetPaths();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error selecting coversheet template file:', error);
+                    this.showAlert('Failed to select coversheet template file: ' + error.message, 'error');
+                }
+            });
+        }
+
+        // Browse coversheet output directory
+        const browseOutputButton = document.getElementById('browse-coversheet-output');
+        if (browseOutputButton) {
+            browseOutputButton.addEventListener('click', async () => {
+                if (!window.electronAPI || !window.electronAPI.selectCoversheetOutputDirectory) {
+                    this.showAlert('Coversheet output directory selection is not available.', 'error');
+                    return;
+                }
+
+                try {
+                    const result = await window.electronAPI.selectCoversheetOutputDirectory();
+                    if (result.success && result.directoryPath) {
+                        const input = document.getElementById('coversheet-output-directory');
+                        if (input) {
+                            input.value = result.directoryPath;
+                            await this.autoSaveCoversheetPaths();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error selecting coversheet output directory:', error);
+                    this.showAlert('Failed to select coversheet output directory: ' + error.message, 'error');
+                }
+            });
+        }
+
         // Save download settings
         const saveDownloadButton = document.getElementById('save-download-settings');
         if (saveDownloadButton) {
@@ -265,6 +315,8 @@ class PatentApp {
                     const downloadDirectory = document.getElementById('download-directory')?.value;
                     const filenameFormat = document.getElementById('filename-format')?.value;
                     const createSubfolders = document.getElementById('create-subfolders')?.checked;
+                    const coversheetTemplatePath = document.getElementById('coversheet-template-path')?.value;
+                    const coversheetOutputDirectory = document.getElementById('coversheet-output-directory')?.value;
 
                     if (!downloadDirectory) {
                         this.showAlert('Please select a download directory first.', 'error');
@@ -274,7 +326,9 @@ class PatentApp {
                     const downloadSettings = {
                         downloadDirectory,
                         filenameFormat: filenameFormat || 'publication-number',
-                        createSubfolders: createSubfolders || false
+                        createSubfolders: createSubfolders || false,
+                        coversheetTemplatePath: coversheetTemplatePath || '',
+                        coversheetOutputDirectory: coversheetOutputDirectory || ''
                     };
 
                     if (!window.electronAPI || !window.electronAPI.saveDownloadSettings) {
@@ -338,6 +392,8 @@ class PatentApp {
                 const directoryInput = document.getElementById('download-directory');
                 const filenameSelect = document.getElementById('filename-format');
                 const subfoldersCheckbox = document.getElementById('create-subfolders');
+                const coversheetTemplateInput = document.getElementById('coversheet-template-path');
+                const coversheetOutputInput = document.getElementById('coversheet-output-directory');
                 
                 if (data.downloadDirectory && directoryInput) {
                     directoryInput.value = data.downloadDirectory;
@@ -347,6 +403,12 @@ class PatentApp {
                 }
                 if (data.createSubfolders !== undefined && subfoldersCheckbox) {
                     subfoldersCheckbox.checked = data.createSubfolders;
+                }
+                if (coversheetTemplateInput) {
+                    coversheetTemplateInput.value = data.coversheetTemplatePath || '';
+                }
+                if (coversheetOutputInput) {
+                    coversheetOutputInput.value = data.coversheetOutputDirectory || '';
                 }
             }
         } catch (error) {
@@ -371,7 +433,9 @@ class PatentApp {
             const downloadSettings = {
                 downloadDirectory: directoryPath,
                 filenameFormat: existingSettings.filenameFormat || 'publication-number',
-                createSubfolders: existingSettings.createSubfolders || false
+                createSubfolders: existingSettings.createSubfolders || false,
+                coversheetTemplatePath: existingSettings.coversheetTemplatePath || '',
+                coversheetOutputDirectory: existingSettings.coversheetOutputDirectory || ''
             };
             
             console.log('Saving download settings:', downloadSettings);
@@ -390,6 +454,39 @@ class PatentApp {
         } catch (error) {
             console.error('❌ Error auto-saving download directory:', error);
             this.showAlert('Error saving directory: ' + error.message, 'error');
+        }
+    }
+
+    async autoSaveCoversheetPaths() {
+        try {
+            if (!window.electronAPI || !window.electronAPI.loadDownloadSettings || !window.electronAPI.saveDownloadSettings) {
+                return;
+            }
+
+            let existingSettings = {};
+            const loadResult = await window.electronAPI.loadDownloadSettings();
+            if (loadResult.success && loadResult.data) {
+                existingSettings = loadResult.data;
+            }
+
+            const coversheetTemplatePath = document.getElementById('coversheet-template-path')?.value || '';
+            const coversheetOutputDirectory = document.getElementById('coversheet-output-directory')?.value || '';
+
+            const mergedSettings = {
+                downloadDirectory: existingSettings.downloadDirectory || '',
+                filenameFormat: existingSettings.filenameFormat || 'publication-number',
+                createSubfolders: existingSettings.createSubfolders || false,
+                coversheetTemplatePath,
+                coversheetOutputDirectory
+            };
+
+            const saveResult = await window.electronAPI.saveDownloadSettings(mergedSettings);
+            if (!saveResult.success) {
+                this.showAlert('Failed to save coversheet paths: ' + saveResult.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error auto-saving coversheet paths:', error);
+            this.showAlert('Failed to save coversheet paths: ' + error.message, 'error');
         }
     }
 

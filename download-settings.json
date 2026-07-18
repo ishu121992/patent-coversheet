@@ -1,5 +1,7 @@
 {
   "downloadDirectory": "C:\\Users\\EeshanMishra\\OneDrive - CHIP LAW GROUP\\Documents\\USPub",
   "filenameFormat": "publication-number",
-  "createSubfolders": false
+  "createSubfolders": false,
+  "coversheetTemplatePath": "C:\\Users\\EeshanMishra\\OneDrive - CHIP LAW GROUP\\Desktop\\Granted Patent Cover - Template.xlsx",
+  "coversheetOutputDirectory": "C:\\Users\\EeshanMishra\\OneDrive - CHIP LAW GROUP\\Desktop\\Coversheets"
 }

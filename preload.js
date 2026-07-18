@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Directory selection
   selectDownloadDirectory: () => ipcRenderer.invoke('select-download-directory'),
+  selectCoversheetTemplateFile: () => ipcRenderer.invoke('select-coversheet-template-file'),
+  selectCoversheetOutputDirectory: () => ipcRenderer.invoke('select-coversheet-output-directory'),
   
   // Patent download
   downloadPatent: (options) => ipcRenderer.invoke('download-patent', options),
@@ -29,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Coversheet extraction operations
   extractCoversheetData: (applicationNumbers) => ipcRenderer.invoke('extract-coversheet-data', applicationNumbers),
+  generateCoversheetFiles: (records) => ipcRenderer.invoke('generate-coversheet-files', records),
   
   // View management
   loadView: (viewName) => ipcRenderer.invoke('load-view', viewName),

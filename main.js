@@ -157,7 +157,9 @@ ipcMain.handle('load-download-settings', async () => {
         data: { 
           downloadDirectory: '', 
           filenameFormat: 'publication-number',
-          createSubfolders: false
+          createSubfolders: false,
+          coversheetTemplatePath: '',
+          coversheetOutputDirectory: ''
         } 
       };
     }
@@ -188,6 +190,107 @@ ipcMain.handle('select-download-directory', async () => {
   } catch (error) {
     console.error('Error selecting directory:', error);
     return { success: false, message: 'Failed to open directory selector' };
+  }
+});
+
+ipcMain.handle('select-coversheet-template-file', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      title: 'Select Coversheet Template File',
+      buttonLabel: 'Select Template',
+      filters: [
+        { name: 'Excel Files', extensions: ['xlsx', 'xlsm', 'xltx', 'xltm'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return { success: false, message: 'Template selection cancelled' };
+    }
+
+    return { success: true, filePath: result.filePaths[0] };
+  } catch (error) {
+    console.error('Error selecting coversheet template:', error);
+    return { success: false, message: 'Failed to select coversheet template: ' + error.message };
+  }
+});
+
+ipcMain.handle('select-coversheet-output-directory', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Coversheet Output Folder',
+      buttonLabel: 'Select Folder'
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return { success: false, message: 'Output folder selection cancelled' };
+    }
+
+    return { success: true, directoryPath: result.filePaths[0] };
+  } catch (error) {
+    console.error('Error selecting coversheet output directory:', error);
+    return { success: false, message: 'Failed to select coversheet output directory: ' + error.message };
+  }
+});
+
+ipcMain.handle('generate-coversheet-files', async (event, records) => {
+  try {
+    if (!Array.isArray(records) || records.length === 0) {
+      return { success: false, message: 'No records provided to generate coversheets.' };
+    }
+
+    const settingsResult = await loadDownloadSettingsSync();
+    if (!settingsResult.success) {
+      return { success: false, message: 'Failed to load settings: ' + settingsResult.message };
+    }
+
+    const settings = settingsResult.data || {};
+    const templatePath = settings.coversheetTemplatePath || '';
+    const outputDirectory = settings.coversheetOutputDirectory || '';
+
+    if (!templatePath) {
+      return { success: false, message: 'Coversheet template path is not configured in Settings.' };
+    }
+
+    if (!fs.existsSync(templatePath)) {
+      return { success: false, message: 'Coversheet template file does not exist: ' + templatePath };
+    }
+
+    if (!outputDirectory) {
+      return { success: false, message: 'Coversheet output folder is not configured in Settings.' };
+    }
+
+    await fs.promises.mkdir(outputDirectory, { recursive: true });
+
+    const files = [];
+    const failures = [];
+
+    for (const record of records) {
+      try {
+        const filePath = await generateSingleCoversheetFromTemplate(record, templatePath, outputDirectory);
+        files.push({
+          docket: record?.formatted?.sony_ref || record?.raw?.docket_number || 'NA',
+          filePath
+        });
+      } catch (error) {
+        failures.push({
+          docket: record?.formatted?.sony_ref || record?.raw?.docket_number || 'NA',
+          inputApplicationNumber: record?.inputApplicationNumber || '',
+          message: error.message
+        });
+      }
+    }
+
+    return {
+      success: failures.length === 0 || files.length > 0,
+      files,
+      failures
+    };
+  } catch (error) {
+    console.error('Error generating coversheet files:', error);
+    return { success: false, message: 'Failed to generate coversheet files: ' + error.message };
   }
 });
 
@@ -474,7 +577,9 @@ async function loadDownloadSettingsSync() {
         data: { 
           downloadDirectory: '', 
           filenameFormat: 'publication-number',
-          createSubfolders: false
+          createSubfolders: false,
+          coversheetTemplatePath: '',
+          coversheetOutputDirectory: ''
         } 
       };
     }
@@ -482,6 +587,165 @@ async function loadDownloadSettingsSync() {
     console.error('âŒ Error loading download settings:', error);
     return { success: false, message: 'Failed to load download settings: ' + error.message };
   }
+}
+
+function sanitizeFilePart(value) {
+  return String(value || '')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sanitizeExcelCellValue(value) {
+  if (value === undefined || value === null) {
+    return 'NA';
+  }
+
+  const raw = String(value);
+
+  // Remove characters that are invalid in XML 1.0 (used by XLSX sharedStrings.xml).
+  const cleaned = raw
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    .replace(/[\uFFFE\uFFFF]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+
+  return cleaned || 'NA';
+}
+
+function escapeXmlText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+async function resolveFirstWorksheetPath(zip) {
+  const workbookFile = zip.file('xl/workbook.xml');
+  const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+
+  if (!workbookFile || !relsFile) {
+    return 'xl/worksheets/sheet1.xml';
+  }
+
+  const workbookXml = await workbookFile.async('string');
+  const relsXml = await relsFile.async('string');
+
+  const firstSheetMatch = workbookXml.match(/<sheet\b[^>]*\br:id="([^"]+)"[^>]*>/i);
+  const relId = firstSheetMatch?.[1];
+  if (!relId) {
+    return 'xl/worksheets/sheet1.xml';
+  }
+
+  const relRegex = new RegExp(`<Relationship\\b[^>]*\\bId="${relId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*\\bTarget="([^"]+)"[^>]*>`, 'i');
+  const relMatch = relsXml.match(relRegex);
+  const target = relMatch?.[1];
+
+  if (!target) {
+    return 'xl/worksheets/sheet1.xml';
+  }
+
+  const normalized = target.replace(/^\/+/, '').replace(/\\/g, '/');
+  return normalized.startsWith('xl/') ? normalized : `xl/${normalized}`;
+}
+
+function upsertInlineStringCell(worksheetXml, cellRef, rawValue, valueType = 'text') {
+  const textValue = escapeXmlText(sanitizeExcelCellValue(rawValue));
+  const numberCandidate = String(rawValue ?? '').replace(/,/g, '').trim();
+  const isNumericValue = valueType === 'number' && /^-?\d+(?:\.\d+)?$/.test(numberCandidate);
+
+  const buildCellXml = (attrs) => {
+    const cleanedAttrs = String(attrs)
+      .replace(/\s+t="[^"]*"/gi, '')
+      .replace(/\s*\/\s*$/g, '');
+
+    if (isNumericValue) {
+      return `<c${cleanedAttrs}><v>${numberCandidate}</v></c>`;
+    }
+
+    return `<c${cleanedAttrs} t="inlineStr"><is><t xml:space="preserve">${textValue}</t></is></c>`;
+  };
+
+  const rowMatch = cellRef.match(/\d+/);
+  if (!rowMatch) {
+    return worksheetXml;
+  }
+
+  const rowNumber = rowMatch[0];
+  const selfClosingCellRegex = new RegExp(`<c([^>]*\\br="${cellRef}"[^>]*)\\/\s*>`, 'i');
+  if (selfClosingCellRegex.test(worksheetXml)) {
+    return worksheetXml.replace(selfClosingCellRegex, (full, attrs) => {
+      return buildCellXml(attrs);
+    });
+  }
+
+  const normalCellRegex = new RegExp(`<c([^>]*\\br="${cellRef}"[^>]*)>[\\s\\S]*?<\\/c>`, 'i');
+  if (normalCellRegex.test(worksheetXml)) {
+    return worksheetXml.replace(normalCellRegex, (full, attrs) => {
+      return buildCellXml(attrs);
+    });
+  }
+
+  const rowRegex = new RegExp(`(<row[^>]*\\br="${rowNumber}"[^>]*>)([\\s\\S]*?)(<\\/row>)`, 'i');
+  if (!rowRegex.test(worksheetXml)) {
+    return worksheetXml;
+  }
+
+  return worksheetXml.replace(rowRegex, (full, start, content, end) => {
+    const newCell = isNumericValue
+      ? `<c r="${cellRef}"><v>${numberCandidate}</v></c>`
+      : `<c r="${cellRef}" t="inlineStr"><is><t xml:space="preserve">${textValue}</t></is></c>`;
+    return `${start}${content}${newCell}${end}`;
+  });
+}
+
+async function generateSingleCoversheetFromTemplate(record, templatePath, outputDirectory) {
+  const formatted = record?.formatted || {};
+  const docket = sanitizeFilePart(formatted.sony_ref || record?.raw?.docket_number || record?.inputApplicationNumber || 'Unknown');
+  const templateExtension = path.extname(templatePath) || '.xlsx';
+  const outputFileName = `${docket} Cover${templateExtension}`;
+  const outputPath = path.join(outputDirectory, outputFileName);
+
+  const templateBuffer = await fs.promises.readFile(templatePath);
+  const zip = await JSZip.loadAsync(templateBuffer);
+  const worksheetPath = await resolveFirstWorksheetPath(zip);
+  const worksheetFile = zip.file(worksheetPath);
+
+  if (!worksheetFile) {
+    throw new Error(`Template worksheet not found: ${worksheetPath}`);
+  }
+
+  let worksheetXml = await worksheetFile.async('string');
+  const cellMap = [
+    { ref: 'D5', value: formatted.sony_ref, type: 'text' },
+    { ref: 'D6', value: formatted.your_ref, type: 'text' },
+    { ref: 'D7', value: formatted.appln_no, type: 'text' },
+    { ref: 'D8', value: formatted.application_date, type: 'text' },
+    { ref: 'D9', value: formatted.patent_no, type: 'text' },
+    { ref: 'D10', value: formatted.issue_date, type: 'text' },
+    { ref: 'D13', value: formatted.expiry_date, type: 'text' },
+    { ref: 'D14', value: formatted.days_added_by_pta, type: 'number' },
+    { ref: 'D15', value: formatted.former_patent_referred_td, type: 'text' },
+    { ref: 'D16', value: formatted.next_due_date_for_annuity, type: 'text' },
+    { ref: 'D17', value: formatted.number_of_all_claims, type: 'number' },
+    { ref: 'D18', value: formatted.number_of_independent_claims, type: 'number' }
+  ];
+
+  for (const item of cellMap) {
+    worksheetXml = upsertInlineStringCell(worksheetXml, item.ref, item.value, item.type);
+  }
+
+  zip.file(worksheetPath, worksheetXml);
+  const outputBuffer = await zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE'
+  });
+
+  await fs.promises.writeFile(outputPath, outputBuffer);
+  return outputPath;
 }
 
 async function loadApiKeysSync() {
