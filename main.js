@@ -264,15 +264,31 @@ ipcMain.handle('generate-coversheet-files', async (event, records) => {
 
     await fs.promises.mkdir(outputDirectory, { recursive: true });
 
+    const apiKeysResult = await loadApiKeysSync();
+    if (!apiKeysResult.success) {
+      return { success: false, message: 'Failed to load API keys: ' + apiKeysResult.message };
+    }
+
+    const apiKeys = apiKeysResult.data || {};
+    if (!apiKeys.usptoApiKey) {
+      return { success: false, message: 'USPTO API key is required to fetch published application front page.' };
+    }
+    if (!apiKeys.espacenetConsumerKey || !apiKeys.espacenetSecretKey) {
+      return { success: false, message: 'Espacenet API keys are required to fetch granted patent front page.' };
+    }
+
     const files = [];
     const failures = [];
 
     for (const record of records) {
       try {
         const filePath = await generateSingleCoversheetFromTemplate(record, templatePath, outputDirectory);
+        const lettersPatentPdfPath = await generateLettersPatentPdfBundle(record, outputDirectory, apiKeys);
+
         files.push({
           docket: record?.formatted?.sony_ref || record?.raw?.docket_number || 'NA',
-          filePath
+          filePath,
+          lettersPatentPdfPath
         });
       } catch (error) {
         failures.push({
@@ -745,6 +761,227 @@ async function generateSingleCoversheetFromTemplate(record, templatePath, output
   });
 
   await fs.promises.writeFile(outputPath, outputBuffer);
+  return outputPath;
+}
+
+function normalizePublicationNumber(value) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function buildGrantedPublicationCandidates(patentNumber) {
+  const digits = cleanNumber(patentNumber);
+  if (!digits) {
+    return [];
+  }
+
+  return [...new Set([
+    `US${digits}B2`,
+    `US${digits}B1`,
+    `US${digits}`
+  ])];
+}
+
+async function downloadGrantedFrontPageBufferFromOps(patentNumber, apiKeys) {
+  const token = await getEPOAccessTokenWithCache(apiKeys.espacenetConsumerKey, apiKeys.espacenetSecretKey);
+  const candidates = buildGrantedPublicationCandidates(patentNumber);
+
+  let lastError = null;
+  for (const publicationNumber of candidates) {
+    try {
+      const formattedPubNumber = formatPublicationNumberForEPO(publicationNumber);
+      const documentInfo = await getEPODocumentInfo(formattedPubNumber, token);
+      const fullImageUrl = `https://ops.epo.org/3.2/rest-services/${documentInfo.link}`;
+
+      const tempPath = path.join(os.tmpdir(), `chip_granted_front_${Date.now()}_${Math.random().toString(16).slice(2)}.pdf`);
+      try {
+        await downloadSinglePage(fullImageUrl, 1, tempPath, token);
+        return await fs.promises.readFile(tempPath);
+      } finally {
+        try {
+          await fs.promises.unlink(tempPath);
+        } catch (cleanupError) {
+          // Ignore cleanup failures.
+        }
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`Failed OPS granted front-page candidate ${publicationNumber}:`, error.message);
+    }
+  }
+
+  throw new Error(`Unable to download granted patent front page via OPS. ${lastError ? lastError.message : ''}`.trim());
+}
+
+async function getEarliestPublication(applicationNumber, usptoApiKey) {
+  const normalizedApp = cleanNumber(applicationNumber);
+  const payload = {
+    q: `applicationNumberText:${normalizedApp}`,
+    pagination: {
+      offset: 0,
+      limit: 1
+    }
+  };
+
+  const data = await usptoRequestJson('POST', '/api/v1/patent/applications/search', usptoApiKey, payload);
+  if (!data || Number(data.count || 0) === 0) {
+    return null;
+  }
+
+  const meta = data.patentFileWrapperDataBag?.[0]?.applicationMetaData || {};
+  return {
+    application_number: normalizedApp,
+    earliest_publication_number: meta.earliestPublicationNumber || 'NA',
+    earliest_publication_date: meta.earliestPublicationDate || 'NA'
+  };
+}
+
+function toPpubIdentifier(publicationNumber) {
+  const normalized = normalizePublicationNumber(publicationNumber);
+  if (!normalized) {
+    return '';
+  }
+
+  // PPUB endpoint expects numeric identifier, generally YYYY#######.
+  const numeric = normalized.replace(/^US/, '').replace(/[A-Z]\d?$/, '').replace(/\D/g, '');
+  return numeric;
+}
+
+async function downloadBufferFromUrlWithHeaders(url, headers = {}, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) {
+      reject(new Error('Too many redirects')); 
+      return;
+    }
+
+    const target = new URL(url);
+    const options = {
+      hostname: target.hostname,
+      port: target.port || 443,
+      path: target.pathname + target.search,
+      method: 'GET',
+      headers
+    };
+
+    const req = https.request(options, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const nextUrl = new URL(res.headers.location, url).toString();
+        downloadBufferFromUrlWithHeaders(nextUrl, headers, redirectCount + 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (res.statusCode !== 200) {
+        reject(new Error(`HTTP ${res.statusCode} from ${target.hostname}`));
+        return;
+      }
+
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    req.on('error', (error) => reject(error));
+    req.setTimeout(45000, () => {
+      req.destroy();
+      reject(new Error('Download timeout'));
+    });
+    req.end();
+  });
+}
+
+async function extractFirstPagePdfBuffer(pdfBuffer) {
+  const inputPdf = await PDFDocument.load(pdfBuffer);
+  if (inputPdf.getPageCount() === 0) {
+    throw new Error('Downloaded PDF has no pages');
+  }
+
+  const outPdf = await PDFDocument.create();
+  const [firstPage] = await outPdf.copyPages(inputPdf, [0]);
+  outPdf.addPage(firstPage);
+  return Buffer.from(await outPdf.save());
+}
+
+async function downloadPublishedApplicationFrontPageBufferFromUspto(applicationNumber, usptoApiKey) {
+  const earliest = await getEarliestPublication(applicationNumber, usptoApiKey);
+  const earliestPub = earliest?.earliest_publication_number || '';
+  if (!earliestPub || String(earliestPub).toUpperCase() === 'NA') {
+    throw new Error('USPTO earliest publication number not available');
+  }
+
+  const ppubId = toPpubIdentifier(earliestPub);
+  if (!ppubId) {
+    throw new Error(`Invalid earliest publication number for PPUB: ${earliestPub}`);
+  }
+
+  const ppubUrl = `https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/${ppubId}`;
+  const pdfBuffer = await downloadBufferFromUrlWithHeaders(ppubUrl, {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  });
+
+  if (!pdfBuffer || pdfBuffer.length < 5 || pdfBuffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new Error(`PPUB download did not return a valid PDF for ${ppubId}`);
+  }
+
+  return extractFirstPagePdfBuffer(pdfBuffer);
+}
+
+async function generateLettersPatentPdfBundle(record, outputDirectory, apiKeys) {
+  const docket = sanitizeFilePart(record?.formatted?.sony_ref || record?.raw?.docket_number || record?.inputApplicationNumber || 'Unknown');
+  const patentNumber = record?.raw?.patent_number || record?.formatted?.patent_no || '';
+  const applicationNumber = record?.raw?.application_number || record?.inputApplicationNumber || '';
+  if (!patentNumber) {
+    throw new Error('Patent number missing for Letters Patent bundle generation');
+  }
+  if (!applicationNumber) {
+    throw new Error('Application number missing for Letters Patent bundle generation');
+  }
+
+  const hasTd = String(record?.raw?.terminal_disclaimer || '').toLowerCase() === 'yes';
+  const outputName = hasTd ? `${docket}_Letters Patent with TD.pdf` : `${docket}_Letters Patent.pdf`;
+  const outputPath = path.join(outputDirectory, outputName);
+
+  // Granted front page: keep using the existing OPS mechanism.
+  const grantedFirstPage = await downloadGrantedFrontPageBufferFromOps(patentNumber, apiKeys);
+
+  // Published application front page: use USPTO PPUB service.
+  const publishedFirstPage = await downloadPublishedApplicationFrontPageBufferFromUspto(applicationNumber, apiKeys.usptoApiKey);
+
+  const mergedPdf = await PDFDocument.create();
+  const grantedPdf = await PDFDocument.load(grantedFirstPage);
+  const publishedPdf = await PDFDocument.load(publishedFirstPage);
+
+  const addPageNormalizedToSize = async (sourcePdf, sourcePageIndex, targetWidth, targetHeight) => {
+    const sourcePage = sourcePdf.getPage(sourcePageIndex);
+    const embeddedPage = await mergedPdf.embedPage(sourcePage);
+
+    const sourceWidth = sourcePage.getWidth();
+    const sourceHeight = sourcePage.getHeight();
+    const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+    const drawWidth = sourceWidth * scale;
+    const drawHeight = sourceHeight * scale;
+    const x = (targetWidth - drawWidth) / 2;
+    const y = (targetHeight - drawHeight) / 2;
+
+    const page = mergedPdf.addPage([targetWidth, targetHeight]);
+    page.drawPage(embeddedPage, {
+      x,
+      y,
+      xScale: scale,
+      yScale: scale
+    });
+  };
+
+  // Use granted front page dimensions as the reference so both pages render at matching visual scale.
+  const grantedFirst = grantedPdf.getPage(0);
+  const targetWidth = grantedFirst.getWidth();
+  const targetHeight = grantedFirst.getHeight();
+
+  await addPageNormalizedToSize(grantedPdf, 0, targetWidth, targetHeight);
+  await addPageNormalizedToSize(publishedPdf, 0, targetWidth, targetHeight);
+
+  const mergedBytes = await mergedPdf.save();
+  await fs.promises.writeFile(outputPath, Buffer.from(mergedBytes));
   return outputPath;
 }
 
