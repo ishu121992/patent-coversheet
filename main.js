@@ -287,6 +287,7 @@ ipcMain.handle('generate-coversheet-files', async (event, records) => {
 
         files.push({
           docket: record?.formatted?.sony_ref || record?.raw?.docket_number || 'NA',
+          inputApplicationNumber: record?.inputApplicationNumber || '',
           filePath,
           lettersPatentPdfPath
         });
@@ -553,7 +554,7 @@ ipcMain.handle('extract-coversheet-data', async (event, applicationNumbers) => {
           results.push({
             success: false,
             inputApplicationNumber: appNumber,
-            message: settled.reason?.message || 'Extraction failed'
+            message: mapExtractionErrorMessage(settled.reason, appNumber)
           });
         }
       }
@@ -573,6 +574,33 @@ ipcMain.handle('extract-coversheet-data', async (event, applicationNumbers) => {
     return { success: false, message: 'Failed to extract coversheet data: ' + error.message };
   }
 });
+
+function mapExtractionErrorMessage(error, appNumber) {
+  const fallback = 'Extraction failed';
+  const message = String(error?.message || fallback);
+
+  if (message.includes('Application is not issued yet')) {
+    return message;
+  }
+
+  if (
+    message.includes('USPTO API request failed (404)') ||
+    /No matching records found/i.test(message)
+  ) {
+    return `No USPTO record found for application ${appNumber}. This can happen for an invalid number, an unpublished application, or temporary USPTO index lag.`;
+  }
+
+  if (
+    /USPTO API request failed \(5\d\d\)/.test(message) ||
+    /request timeout/i.test(message) ||
+    /request error/i.test(message) ||
+    /ECONN|EAI_AGAIN|ENOTFOUND|ETIMEDOUT/i.test(message)
+  ) {
+    return `USPTO service is currently unavailable for application ${appNumber}. Please retry after a short while.`;
+  }
+
+  return message;
+}
 
 // Helper functions
 async function loadDownloadSettingsSync() {
@@ -1056,6 +1084,50 @@ function addYearsMonths(baseDateString, years, months) {
   return formatDateYmd(result);
 }
 
+function buildExpiryComputationDetails(record) {
+  const meta = record?.applicationMetaData || {};
+  const ptaData = record?.patentTermAdjustmentData || {};
+  const ptaDays = Number(ptaData.adjustmentTotalQuantity || 0);
+
+  const applicationFilingDate = meta.filingDate || 'na';
+  let baseDate = applicationFilingDate;
+  let usesNstPctParent = false;
+  let selectedParent = null;
+
+  const continuity = Array.isArray(record?.parentContinuityBag) ? record.parentContinuityBag : [];
+  for (const parent of continuity) {
+    const parentType = parent?.claimParentageTypeCode || '';
+    const parentDesc = String(parent?.claimParentageTypeCodeDescriptionText || '').toLowerCase();
+
+    if (parentType === 'NST' || parentDesc.includes('national stage entry')) {
+      const parentFilingDate = parent?.parentApplicationFilingDate || '';
+      if (parentFilingDate) {
+        baseDate = parentFilingDate;
+        usesNstPctParent = true;
+      }
+
+      selectedParent = {
+        claim_parentage_type_code: parentType || 'na',
+        claim_parentage_type_description: parent?.claimParentageTypeCodeDescriptionText || 'na',
+        parent_application_number: parent?.parentApplicationNumberText || parent?.parentApplicationNumber || 'na',
+        parent_application_filing_date: parentFilingDate || 'na'
+      };
+      break;
+    }
+  }
+
+  const computedExpiryDate = addYearsDays(baseDate, 20, ptaDays);
+
+  return {
+    application_filing_date: applicationFilingDate || 'na',
+    base_date_used_for_expiry: baseDate || 'na',
+    uses_nst_pct_parent: usesNstPctParent ? 'yes' : 'no',
+    selected_nst_pct_parent: selectedParent,
+    pta_days: ptaDays,
+    computed_expiry_date: computedExpiryDate
+  };
+}
+
 function localName(tagName) {
   if (!tagName) return '';
   const noBrace = tagName.includes('}') ? tagName.split('}').pop() : tagName;
@@ -1066,8 +1138,14 @@ function stripTags(value) {
   return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function extractTdPatent(text) {
+function extractTdPatent(text, options = {}) {
   if (!text) return 'na';
+
+  const excludedSet = new Set(
+    (Array.isArray(options.excludeNumbers) ? options.excludeNumbers : [])
+      .map((value) => cleanNumber(value))
+      .filter(Boolean)
+  );
 
   const normalizeCandidate = (value) => {
     const cleaned = String(value || '')
@@ -1085,33 +1163,55 @@ function extractTdPatent(text) {
     return null;
   };
 
+  const chooseBestCandidate = (candidates) => {
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return null;
+    }
+
+    const filtered = candidates.filter((value) => !excludedSet.has(cleanNumber(value)));
+    if (filtered.length === 0) {
+      return null;
+    }
+
+    // TD prior patent numbers are typically 8 digits; prefer those first.
+    const eightDigit = filtered.find((value) => String(value).length === 8);
+    return eightDigit || filtered[0];
+  };
+
   let match = text.match(/prior\s+patent\s+number\(s\)[\s\S]*?Patent\s*(?:#|No\.?|N[o0]\.?|number)?\s*[:\-]?\s*([0-9OIl!|SsBbZzGg,\s]{6,24})/i);
   if (match?.[1]) {
     const normalized = normalizeCandidate(match[1]);
-    if (normalized) return normalized;
+    if (normalized && !excludedSet.has(cleanNumber(normalized))) return normalized;
   }
 
-  match = text.match(/Patent\s*(?:#|No\.?|N[o0]\.?|number)?\s*[:\-]?\s*([0-9OIl!|SsBbZzGg,\s]{6,24})/i);
-  if (match?.[1]) {
+  // Global Patent-label scan: only consider numbers that appear after a Patent label.
+  const patentLabelCandidates = [];
+  const patentLabelRegex = /Patent\s*(?:#|No\.?|N[o0]\.?|number)?\s*[:\-]?\s*([0-9OIl!|SsBbZzGg,\s]{6,24})/gi;
+  while ((match = patentLabelRegex.exec(text)) !== null) {
     const normalized = normalizeCandidate(match[1]);
-    if (normalized) return normalized;
+    if (normalized) {
+      patentLabelCandidates.push(normalized);
+    }
+  }
+
+  const labeledBest = chooseBestCandidate(patentLabelCandidates);
+  if (labeledBest) {
+    return labeledBest;
   }
 
   // Table fallback near "Patent #" label in PTO/SB/25-style forms.
-  match = text.match(/\bPatent\b[\s\S]{0,80}?\b([0-9OIl!|SsBbZzGg]{7,12})\b/i);
-  if (match?.[1]) {
+  const nearbyPatentCandidates = [];
+  const nearbyPatentRegex = /\bPatent\b[\s\S]{0,120}?\b([0-9OIl!|SsBbZzGg]{7,12})\b/gi;
+  while ((match = nearbyPatentRegex.exec(text)) !== null) {
     const normalized = normalizeCandidate(match[1]);
-    if (normalized) return normalized;
+    if (normalized) {
+      nearbyPatentCandidates.push(normalized);
+    }
   }
 
-  // Last-resort: find digit-like clusters and pick a plausible patent number.
-  const candidates = String(text)
-    .match(/[0-9OIl!|SsBbZzGg][0-9OIl!|SsBbZzGg,\s]{6,24}/g) || [];
-  for (const candidate of candidates) {
-    const normalized = normalizeCandidate(candidate);
-    if (normalized) {
-      return normalized;
-    }
+  const nearbyBest = chooseBestCandidate(nearbyPatentCandidates);
+  if (nearbyBest) {
+    return nearbyBest;
   }
 
   return 'na';
@@ -1359,17 +1459,17 @@ async function extractTdPdfText(pdfBuffer) {
   return extractPdfTextHeuristic(pdfBuffer);
 }
 
-async function extractTdPatentNumberFromPdf(pdfBuffer) {
+async function extractTdPatentNumberFromPdf(pdfBuffer, options = {}) {
   // OCR-only flow for TD image PDFs: skip embedded text extraction.
   const ocrText = await ocrPdfBufferWithTesseract(pdfBuffer);
-  let tdPatentNumber = extractTdPatent(ocrText);
+  let tdPatentNumber = extractTdPatent(ocrText, options);
   if (tdPatentNumber !== 'na') {
     console.log('TD patent extracted from OCR text:', tdPatentNumber);
     return tdPatentNumber;
   }
 
   const heuristicText = extractPdfTextHeuristic(pdfBuffer);
-  tdPatentNumber = extractTdPatent(heuristicText);
+  tdPatentNumber = extractTdPatent(heuristicText, options);
   if (tdPatentNumber !== 'na') {
     console.log('TD patent extracted from heuristic PDF text:', tdPatentNumber);
     return tdPatentNumber;
@@ -1536,26 +1636,7 @@ async function searchPatentRecord({ applicationNumber, patentNumber, apiKey }) {
 }
 
 function calculateExpiry(record) {
-  const meta = record?.applicationMetaData || {};
-  const ptaData = record?.patentTermAdjustmentData || {};
-  const ptaDays = Number(ptaData.adjustmentTotalQuantity || 0);
-
-  let baseDate = meta.filingDate || '';
-  const continuity = Array.isArray(record?.parentContinuityBag) ? record.parentContinuityBag : [];
-
-  for (const parent of continuity) {
-    const parentType = parent?.claimParentageTypeCode || '';
-    const parentDesc = String(parent?.claimParentageTypeCodeDescriptionText || '').toLowerCase();
-
-    if (parentType === 'NST' || parentDesc.includes('national stage entry')) {
-      if (parent?.parentApplicationFilingDate) {
-        baseDate = parent.parentApplicationFilingDate;
-      }
-      break;
-    }
-  }
-
-  return addYearsDays(baseDate, 20, ptaDays);
+  return buildExpiryComputationDetails(record).computed_expiry_date;
 }
 
 async function getClaimCounts(record, apiKey) {
@@ -1628,6 +1709,7 @@ async function getPatentDetails({ applicationNumber, patentNumber, apiKey }) {
   }
 
   const claimData = await getClaimCounts(record, apiKey);
+  const expiryDetails = buildExpiryComputationDetails(record);
 
   return {
     record,
@@ -1636,9 +1718,12 @@ async function getPatentDetails({ applicationNumber, patentNumber, apiKey }) {
     filing_date: meta.filingDate || '',
     patent_number: meta.patentNumber || '',
     grant_date: meta.grantDate || '',
+    application_status_code: meta.applicationStatusCode || '',
+    application_status_text: meta.applicationStatusDescriptionText || '',
     pta_days: ptaDays,
     terminal_disclaimer: terminalDisclaimer,
-    expiry_date: calculateExpiry(record),
+    expiry_date: expiryDetails.computed_expiry_date,
+    expiry_details: expiryDetails,
     total_claims: claimData.total_claims,
     independent_claims: claimData.independent_claims
   };
@@ -1706,6 +1791,13 @@ async function getFinalExpiryData(applicationNumber, apiKey) {
     throw new Error('No USPTO record found for application ' + applicationNumber);
   }
 
+  if (!String(original.patent_number || '').trim()) {
+    const statusSuffix = original.application_status_text
+      ? ` (status: ${original.application_status_text}${original.application_status_code ? ` [${original.application_status_code}]` : ''})`
+      : '';
+    throw new Error(`Application is not issued yet (no granted patent number) for ${applicationNumber}${statusSuffix}.`);
+  }
+
   const expiryOriginal = original.expiry_date || 'na';
   let expiryFinal = expiryOriginal;
 
@@ -1721,23 +1813,49 @@ async function getFinalExpiryData(applicationNumber, apiKey) {
   let tdGrantDate = 'na';
   let tdPtaDays = 'na';
   let expiryTdPatent = 'na';
+  let tdExpiryDetails = null;
 
   if (original.terminal_disclaimer === 'yes') {
     try {
       const tdPdfBuffer = await downloadTerminalDisclaimerPdfBuffer(applicationNumber, apiKey);
       if (tdPdfBuffer) {
-        tdPatentNumber = await extractTdPatentNumberFromPdf(tdPdfBuffer);
+        tdPatentNumber = await extractTdPatentNumberFromPdf(tdPdfBuffer, {
+          excludeNumbers: [applicationNumber]
+        });
         console.log('TD patent extraction result for application', applicationNumber, ':', tdPatentNumber);
 
         if (tdPatentNumber !== 'na') {
-          const tdData = await getPatentDetails({ patentNumber: tdPatentNumber, apiKey });
+          let tdData = null;
+
+          // Primary path: extracted value is expected to be a patent number.
+          try {
+            tdData = await getPatentDetails({ patentNumber: tdPatentNumber, apiKey });
+          } catch (error) {
+            console.warn('TD lookup by patent number failed for', tdPatentNumber, '-', error.message);
+          }
+
+          // Fallback path: some TD forms contain an application number instead.
+          if (!tdData) {
+            try {
+              tdData = await getPatentDetails({ applicationNumber: tdPatentNumber, apiKey });
+              if (tdData) {
+                console.log('TD lookup succeeded by application number fallback for', tdPatentNumber);
+              }
+            } catch (error) {
+              console.warn('TD lookup by application number failed for', tdPatentNumber, '-', error.message);
+            }
+          }
+
           if (tdData) {
+            // Always populate TD patent number from resolved USPTO record.
+            tdPatentNumber = tdData.patent_number || tdPatentNumber;
             tdApplicationNumber = tdData.application_number || 'na';
             tdDocketNumber = tdData.docket_number || 'na';
             tdFilingDate = tdData.filing_date || 'na';
             tdGrantDate = tdData.grant_date || 'na';
             tdPtaDays = tdData.pta_days;
             expiryTdPatent = tdData.expiry_date || 'na';
+            tdExpiryDetails = tdData.expiry_details || null;
             expiryFinal = getFinalExpiryMin(expiryOriginal, expiryTdPatent);
           }
         }
@@ -1766,7 +1884,30 @@ async function getFinalExpiryData(applicationNumber, apiKey) {
     td_pta_days: tdPtaDays,
     expiry_original: expiryOriginal,
     expiry_td_patent: expiryTdPatent,
-    expiry_final: expiryFinal
+    expiry_final: expiryFinal,
+    expiry_debug: {
+      original: {
+        application_number: original.application_number || 'na',
+        patent_number: original.patent_number || 'na',
+        grant_issue_date: original.grant_date || 'na',
+        terminal_disclaimer: original.terminal_disclaimer || 'no',
+        computation: original.expiry_details || null
+      },
+      td_patent: {
+        patent_number: tdPatentNumber,
+        application_number: tdApplicationNumber,
+        docket_number: tdDocketNumber,
+        grant_issue_date: tdGrantDate,
+        pta_days: tdPtaDays,
+        computation: tdExpiryDetails
+      },
+      final_rule: {
+        rule: 'expiry_final = min(expiry_original, expiry_td_patent) when TD patent expiry exists; otherwise expiry_original',
+        expiry_original: expiryOriginal,
+        expiry_td_patent: expiryTdPatent,
+        expiry_final: expiryFinal
+      }
+    }
   };
 
   const formatted = {

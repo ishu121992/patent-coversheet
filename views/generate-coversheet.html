@@ -1,6 +1,6 @@
 <div class="coversheet-extract-container">
     <section class="extract-input-section">
-        <h3>Extract Coversheet Data (Part 1)</h3>
+        <h3>Extract Coversheet Data</h3>
         <p>Add one or more application numbers, then run extraction to validate all fields before document generation.</p>
 
         <div class="form-group">
@@ -9,7 +9,7 @@
                 <input
                     type="text"
                     id="coversheet-application-input"
-                    placeholder="e.g., 16/629,343 or 18629343"
+                    placeholder="e.g., 16/629,343, US16/629,343, or 16629343"
                     class="application-input"
                 >
                 <button type="button" id="add-coversheet-application" class="btn btn-primary">Add</button>
@@ -63,17 +63,45 @@
                         <th>Next Annuity Date</th>
                         <th>All Claims</th>
                         <th>Independent Claims</th>
+                        <th>Status</th>
+                        <th>Details</th>
                     </tr>
                 </thead>
                 <tbody id="coversheet-results-body">
                     <tr class="empty-row">
-                        <td colspan="13">Run extraction to see results.</td>
+                        <td colspan="15">Run extraction to see results.</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         <div id="coversheet-errors" class="extract-errors hidden"></div>
+
+        <div id="coversheet-details-modal" class="details-modal hidden" role="dialog" aria-modal="true" aria-labelledby="coversheet-details-title">
+            <div class="details-modal-content">
+                <div class="details-modal-header">
+                    <h5 id="coversheet-details-title">Extracted Details</h5>
+                    <button type="button" id="close-coversheet-details" class="btn btn-secondary btn-sm">Close</button>
+                </div>
+                <pre id="coversheet-details-body" class="details-modal-body"></pre>
+            </div>
+        </div>
+
+        <div id="coversheet-extract-mode-modal" class="details-modal hidden" role="dialog" aria-modal="true" aria-labelledby="coversheet-extract-mode-title">
+            <div class="details-modal-content extract-mode-content">
+                <div class="details-modal-header">
+                    <h5 id="coversheet-extract-mode-title">Choose Extraction Mode</h5>
+                </div>
+                <div class="extract-mode-body">
+                    <p id="coversheet-extract-mode-message">Some application numbers were already extracted.</p>
+                </div>
+                <div class="extract-mode-actions">
+                    <button type="button" id="extract-mode-only-new" class="btn btn-success">Only New Inputs</button>
+                    <button type="button" id="extract-mode-all" class="btn btn-primary">Re-extract All</button>
+                    <button type="button" id="extract-mode-cancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
     </section>
 </div>
 
@@ -273,6 +301,104 @@
     padding-left: 20px;
 }
 
+.btn.btn-link {
+    background: transparent;
+    border: 1px solid #d7e2ec;
+    color: #1f5fa6;
+    padding: 5px 8px;
+}
+
+.details-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1100;
+}
+
+.details-modal-content {
+    width: min(1000px, 96vw);
+    max-height: 86vh;
+    background: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #dce6ef;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.details-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e7edf3;
+}
+
+.details-modal-header h5 {
+    margin: 0;
+    color: #2c3e50;
+}
+
+.details-modal-body {
+    margin: 0;
+    padding: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #142433;
+    background: #f9fbfd;
+}
+
+.extract-mode-content {
+    width: min(560px, 96vw);
+}
+
+.extract-mode-body {
+    padding: 14px;
+    color: #2c3e50;
+}
+
+.extract-mode-body p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.extract-mode-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 14px 14px;
+    flex-wrap: wrap;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.status-badge-extracted {
+    background: #eef6ff;
+    color: #1b5ea9;
+    border: 1px solid #cfe3fb;
+}
+
+.status-badge-generated {
+    background: #eaf9ef;
+    color: #1e7a40;
+    border: 1px solid #c8ebd5;
+}
+
 .hidden {
     display: none;
 }
@@ -308,10 +434,31 @@
     const resultsBody = document.getElementById('coversheet-results-body');
     const errorsBox = document.getElementById('coversheet-errors');
     const clearResultsBtn = document.getElementById('clear-coversheet-results');
+    const detailsModal = document.getElementById('coversheet-details-modal');
+    const detailsBody = document.getElementById('coversheet-details-body');
+    const closeDetailsBtn = document.getElementById('close-coversheet-details');
+    const extractModeModal = document.getElementById('coversheet-extract-mode-modal');
+    const extractModeMessage = document.getElementById('coversheet-extract-mode-message');
+    const extractModeOnlyNewBtn = document.getElementById('extract-mode-only-new');
+    const extractModeAllBtn = document.getElementById('extract-mode-all');
+    const extractModeCancelBtn = document.getElementById('extract-mode-cancel');
     let lastSuccessfulRows = [];
+    let previouslyExtractedInputs = new Set();
+    let generatedInputs = new Set();
+    let extractedRowsByInput = new Map();
+    let pendingExtractModeResolver = null;
 
     function cleanNumber(value) {
         return String(value || '').replace(/\D/g, '');
+    }
+
+    function parseApplicationNumber(value) {
+        const digits = cleanNumber(value);
+        const trimmed = digits.slice(0, 8);
+        return {
+            normalized: trimmed,
+            tooLong: digits.length > 8
+        };
     }
 
     function formatInputForList(value) {
@@ -362,10 +509,16 @@
 
     function addApplication() {
         const raw = input.value.trim();
-        const cleaned = cleanNumber(raw);
+        const parsed = parseApplicationNumber(raw);
+        const cleaned = parsed.normalized;
 
         if (!cleaned) {
             setStatus('Please enter a valid application number.', true);
+            return;
+        }
+
+        if (parsed.tooLong) {
+            setStatus('Application number must be at most 8 digits.', true);
             return;
         }
 
@@ -380,24 +533,121 @@
     }
 
     function clearResults() {
-        resultsBody.innerHTML = '<tr class="empty-row"><td colspan="13">Run extraction to see results.</td></tr>';
+        resultsBody.innerHTML = '<tr class="empty-row"><td colspan="15">Run extraction to see results.</td></tr>';
         errorsBox.classList.add('hidden');
         errorsBox.innerHTML = '';
         lastSuccessfulRows = [];
+        previouslyExtractedInputs = new Set();
+        generatedInputs = new Set();
+        extractedRowsByInput = new Map();
         generateBtn.disabled = true;
+        detailsModal.classList.add('hidden');
+        detailsBody.textContent = '';
     }
 
-    function renderResults(data) {
-        const successRows = data.results.filter(function (r) { return r.success; });
-        const failedRows = data.results.filter(function (r) { return !r.success; });
-        lastSuccessfulRows = successRows;
-        generateBtn.disabled = successRows.length === 0;
+    function closeExtractModeModal() {
+        extractModeModal.classList.add('hidden');
+        extractModeMessage.textContent = '';
+        pendingExtractModeResolver = null;
+    }
 
-        if (successRows.length === 0) {
-            resultsBody.innerHTML = '<tr class="empty-row"><td colspan="13">No successful records returned.</td></tr>';
+    function askExtractMode(newCount, alreadyCount) {
+        return new Promise(function (resolve) {
+            pendingExtractModeResolver = resolve;
+
+            extractModeMessage.textContent = alreadyCount + ' application(s) were extracted before and ' + newCount + ' are new. Choose how to proceed.';
+            extractModeModal.classList.remove('hidden');
+        });
+    }
+
+    function asText(value) {
+        if (value === undefined || value === null || value === '') {
+            return 'NA';
+        }
+        return String(value);
+    }
+
+    function createDetailsText(item) {
+        const raw = item.raw || {};
+        const debug = raw.expiry_debug || {};
+        const orig = debug.original || {};
+        const origComp = orig.computation || {};
+        const td = debug.td_patent || {};
+        const tdComp = td.computation || {};
+        const finalRule = debug.final_rule || {};
+
+        const lines = [
+            'INPUT',
+            'Input application number: ' + asText(item.inputApplicationNumber),
+            '',
+            'ORIGINAL PATENT',
+            'Application number: ' + asText(raw.application_number),
+            'Patent number: ' + asText(raw.patent_number),
+            'Docket number: ' + asText(raw.docket_number),
+            'Application filing date: ' + asText(origComp.application_filing_date || raw.application_date),
+            'Base date used for expiry: ' + asText(origComp.base_date_used_for_expiry),
+            'Uses NST/PCT parent for base date: ' + asText(origComp.uses_nst_pct_parent),
+            'NST/PCT parent app no: ' + asText(origComp.selected_nst_pct_parent && origComp.selected_nst_pct_parent.parent_application_number),
+            'NST/PCT parent filing date: ' + asText(origComp.selected_nst_pct_parent && origComp.selected_nst_pct_parent.parent_application_filing_date),
+            'PTA days: ' + asText(origComp.pta_days || raw.pta_days),
+            'Computed original expiry: ' + asText(raw.expiry_original),
+            '',
+            'TERMINAL DISCLAIMER',
+            'Terminal disclaimer exists: ' + asText(raw.terminal_disclaimer),
+            'TD patent number extracted: ' + asText(raw.td_patent_number),
+            'TD application number: ' + asText(raw.td_application_number),
+            'TD docket number: ' + asText(raw.td_docket_number),
+            'TD filing date: ' + asText(raw.td_application_date),
+            'TD base date used for expiry: ' + asText(tdComp.base_date_used_for_expiry),
+            'TD uses NST/PCT parent for base date: ' + asText(tdComp.uses_nst_pct_parent),
+            'TD NST/PCT parent app no: ' + asText(tdComp.selected_nst_pct_parent && tdComp.selected_nst_pct_parent.parent_application_number),
+            'TD NST/PCT parent filing date: ' + asText(tdComp.selected_nst_pct_parent && tdComp.selected_nst_pct_parent.parent_application_filing_date),
+            'TD PTA days: ' + asText(tdComp.pta_days || raw.td_pta_days),
+            'Computed TD patent expiry: ' + asText(raw.expiry_td_patent),
+            '',
+            'FINAL EXPIRY',
+            'Rule used: ' + asText(finalRule.rule),
+            'Final expiry selected: ' + asText(raw.expiry_final),
+            '',
+            'OTHER EXTRACTED FIELDS',
+            'Grant issue date: ' + asText(raw.grant_issue_date),
+            'Next annuity date (3.5y from grant): ' + asText(raw.next_annuity_date),
+            'Total claims: ' + asText(raw.total_claims),
+            'Independent claims: ' + asText(raw.independent_claims)
+        ];
+
+        return lines.join('\n');
+    }
+
+    function openDetails(inputAppNumber) {
+        const item = extractedRowsByInput.get(cleanNumber(inputAppNumber));
+        if (!item) {
+            return;
+        }
+
+        detailsBody.textContent = createDetailsText(item);
+        detailsModal.classList.remove('hidden');
+    }
+
+    function closeDetails() {
+        detailsModal.classList.add('hidden');
+        detailsBody.textContent = '';
+    }
+
+    function renderResults(failedRows) {
+        const extractedRows = Array.from(extractedRowsByInput.values());
+        lastSuccessfulRows = extractedRows;
+        generateBtn.disabled = extractedRows.length === 0;
+
+        if (extractedRows.length === 0) {
+            resultsBody.innerHTML = '<tr class="empty-row"><td colspan="15">No successful records returned.</td></tr>';
         } else {
-            resultsBody.innerHTML = successRows.map(function (item) {
+            resultsBody.innerHTML = extractedRows.map(function (item) {
                 const f = item.formatted || {};
+                const normalizedInput = cleanNumber(item.inputApplicationNumber);
+                const isGenerated = generatedInputs.has(normalizedInput);
+                const statusLabel = isGenerated ? 'Generated' : 'Extracted';
+                const statusClass = isGenerated ? 'status-badge status-badge-generated' : 'status-badge status-badge-extracted';
                 return '<tr>'
                     + '<td>' + (item.inputApplicationNumber || '') + '</td>'
                     + '<td>' + (f.sony_ref || 'NA') + '</td>'
@@ -412,11 +662,13 @@
                     + '<td>' + (f.next_due_date_for_annuity || 'NA') + '</td>'
                     + '<td>' + (f.number_of_all_claims || 'NA') + '</td>'
                     + '<td>' + (f.number_of_independent_claims || 'NA') + '</td>'
+                    + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                    + '<td><button type="button" class="btn btn-link btn-sm view-coversheet-details" data-app="' + normalizedInput + '">View Details</button></td>'
                     + '</tr>';
             }).join('');
         }
 
-        if (failedRows.length > 0) {
+        if (Array.isArray(failedRows) && failedRows.length > 0) {
             errorsBox.classList.remove('hidden');
             errorsBox.innerHTML = '<h5>Failed Extractions</h5><ul>' + failedRows.map(function (item) {
                 return '<li>' + (item.inputApplicationNumber || '') + ': ' + (item.message || 'Unknown error') + '</li>';
@@ -427,24 +679,36 @@
         }
     }
 
-    async function extractData() {
+    async function runExtractionWithList(targetNumbers) {
         if (!window.electronAPI || !window.electronAPI.extractCoversheetData) {
             setStatus('Extraction API is not available. Restart the app.', true);
             return;
         }
 
         extractBtn.disabled = true;
-        setStatus('Extracting coversheet data for ' + appNumbers.length + ' application(s)...', false);
+        setStatus('Extracting coversheet data for ' + targetNumbers.length + ' application(s)...', false);
 
         try {
-            const response = await window.electronAPI.extractCoversheetData(appNumbers);
+            const response = await window.electronAPI.extractCoversheetData(targetNumbers);
 
             if (!response.success) {
                 setStatus(response.message || 'Extraction failed.', true);
                 return;
             }
 
-            renderResults(response);
+            const successRows = (response.results || []).filter(function (r) { return r.success; });
+            const failedRows = (response.results || []).filter(function (r) { return !r.success; });
+
+            successRows.forEach(function (row) {
+                const normalized = cleanNumber(row.inputApplicationNumber);
+                extractedRowsByInput.set(normalized, row);
+            });
+
+            targetNumbers.forEach(function (num) {
+                previouslyExtractedInputs.add(cleanNumber(num));
+            });
+
+            renderResults(failedRows);
             setStatus(
                 'Extraction complete. Success: ' + response.summary.succeeded + ', Failed: ' + response.summary.failed + '.',
                 false
@@ -454,6 +718,31 @@
         } finally {
             extractBtn.disabled = appNumbers.length === 0;
         }
+    }
+
+    async function extractData() {
+        const normalizedApps = appNumbers.map(function (n) { return cleanNumber(n); }).filter(Boolean);
+        const alreadyExtracted = normalizedApps.filter(function (n) { return previouslyExtractedInputs.has(n); });
+        const newInputs = normalizedApps.filter(function (n) { return !previouslyExtractedInputs.has(n); });
+
+        if (previouslyExtractedInputs.size > 0 && alreadyExtracted.length > 0 && newInputs.length > 0) {
+            const mode = await askExtractMode(newInputs.length, alreadyExtracted.length);
+
+            if (mode === 'only-new') {
+                await runExtractionWithList(newInputs);
+                return;
+            }
+
+            if (mode === 'all') {
+                await runExtractionWithList(normalizedApps);
+                return;
+            }
+
+            setStatus('Extraction cancelled.', false);
+            return;
+        }
+
+        await runExtractionWithList(normalizedApps);
     }
 
     async function generateCoversheetFiles() {
@@ -467,15 +756,33 @@
             return;
         }
 
+        const pendingRows = lastSuccessfulRows.filter(function (row) {
+            return !generatedInputs.has(cleanNumber(row.inputApplicationNumber));
+        });
+
+        if (pendingRows.length === 0) {
+            setStatus('All extracted rows already have generated coversheets.', false);
+            return;
+        }
+
         generateBtn.disabled = true;
-        setStatus('Generating coversheet files for ' + lastSuccessfulRows.length + ' record(s)...', false);
+        setStatus('Generating coversheet files for ' + pendingRows.length + ' record(s)...', false);
 
         try {
-            const response = await window.electronAPI.generateCoversheetFiles(lastSuccessfulRows);
+            const response = await window.electronAPI.generateCoversheetFiles(pendingRows);
             if (!response.success) {
                 setStatus(response.message || 'Failed to generate coversheet files.', true);
                 return;
             }
+
+            (response.files || []).forEach(function (file) {
+                const normalized = cleanNumber(file.inputApplicationNumber);
+                if (normalized) {
+                    generatedInputs.add(normalized);
+                }
+            });
+
+            renderResults();
 
             const successCount = (response.files || []).length;
             const failCount = (response.failures || []).length;
@@ -503,6 +810,15 @@
         }
     });
 
+    input.addEventListener('input', function () {
+        const parsed = parseApplicationNumber(input.value);
+        if (parsed.tooLong) {
+            setStatus('Only first 8 digits are allowed for application number input.', true);
+        } else if (status.textContent && status.textContent.toLowerCase().indexOf('8 digits') !== -1) {
+            clearStatus();
+        }
+    });
+
     clearBtn.addEventListener('click', function () {
         appNumbers.length = 0;
         renderList();
@@ -525,6 +841,69 @@
         if (index >= 0) {
             appNumbers.splice(index, 1);
             renderList();
+        }
+    });
+
+    resultsBody.addEventListener('click', function (event) {
+        const target = event.target;
+        if (!target.classList.contains('view-coversheet-details')) {
+            return;
+        }
+
+        const inputApp = cleanNumber(target.getAttribute('data-app'));
+        if (inputApp) {
+            openDetails(inputApp);
+        }
+    });
+
+    closeDetailsBtn.addEventListener('click', closeDetails);
+
+    extractModeOnlyNewBtn.addEventListener('click', function () {
+        if (pendingExtractModeResolver) {
+            pendingExtractModeResolver('only-new');
+        }
+        closeExtractModeModal();
+    });
+
+    extractModeAllBtn.addEventListener('click', function () {
+        if (pendingExtractModeResolver) {
+            pendingExtractModeResolver('all');
+        }
+        closeExtractModeModal();
+    });
+
+    extractModeCancelBtn.addEventListener('click', function () {
+        if (pendingExtractModeResolver) {
+            pendingExtractModeResolver('cancel');
+        }
+        closeExtractModeModal();
+    });
+
+    detailsModal.addEventListener('click', function (event) {
+        if (event.target === detailsModal) {
+            closeDetails();
+        }
+    });
+
+    extractModeModal.addEventListener('click', function (event) {
+        if (event.target === extractModeModal) {
+            if (pendingExtractModeResolver) {
+                pendingExtractModeResolver('cancel');
+            }
+            closeExtractModeModal();
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !detailsModal.classList.contains('hidden')) {
+            closeDetails();
+        }
+
+        if (event.key === 'Escape' && !extractModeModal.classList.contains('hidden')) {
+            if (pendingExtractModeResolver) {
+                pendingExtractModeResolver('cancel');
+            }
+            closeExtractModeModal();
         }
     });
 
