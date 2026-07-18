@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadFileWrapperDocuments: (options) => ipcRenderer.invoke('download-file-wrapper-documents', options),
   onFileWrapperProgress: (callback) => ipcRenderer.on('file-wrapper-progress', (event, data) => callback(data)),
   
+  // Coversheet extraction operations
+  extractCoversheetData: (applicationNumbers) => ipcRenderer.invoke('extract-coversheet-data', applicationNumbers),
+  
   // View management
   loadView: (viewName) => ipcRenderer.invoke('load-view', viewName),
   

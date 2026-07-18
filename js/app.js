@@ -113,6 +113,7 @@ class PatentApp {
             
             if (result.success) {
                 this.contentBody.innerHTML = result.content;
+                this.executeViewScripts(this.contentBody);
                 this.updateTitle(viewName);
                 this.currentView = viewName;
                 
@@ -135,6 +136,27 @@ class PatentApp {
         } finally {
             this.hideLoading();
         }
+    }
+
+    executeViewScripts(container) {
+        const scripts = container.querySelectorAll('script');
+        scripts.forEach((oldScript) => {
+            const newScript = document.createElement('script');
+
+            if (oldScript.src) {
+                newScript.src = oldScript.src;
+            } else {
+                newScript.textContent = oldScript.textContent;
+            }
+
+            Array.from(oldScript.attributes).forEach((attr) => {
+                if (attr.name !== 'src') {
+                    newScript.setAttribute(attr.name, attr.value);
+                }
+            });
+
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
     }
 
     initializeViewFunctionality(viewName) {

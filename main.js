@@ -1,10 +1,26 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const https = require('https');
 const http = require('http');
+const { spawnSync } = require('child_process');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
+const canvasBindings = require('@napi-rs/canvas');
+const { createCanvas } = canvasBindings;
+const Tesseract = require('tesseract.js');
+
+// PDF.js on Node/Electron main requires DOM geometry/polyfill objects for rendering.
+if (typeof globalThis.DOMMatrix === 'undefined' && canvasBindings.DOMMatrix) {
+  globalThis.DOMMatrix = canvasBindings.DOMMatrix;
+}
+if (typeof globalThis.Path2D === 'undefined' && canvasBindings.Path2D) {
+  globalThis.Path2D = canvasBindings.Path2D;
+}
+if (typeof globalThis.ImageData === 'undefined' && canvasBindings.ImageData) {
+  globalThis.ImageData = canvasBindings.ImageData;
+}
 
 // Path to store API keys and settings
 const configPath = path.join(__dirname, 'config.json');
@@ -376,6 +392,69 @@ ipcMain.handle('download-file-wrapper-documents', async (event, options) => {
   }
 });
 
+// IPC handler for extracting coversheet data for one or more application numbers
+ipcMain.handle('extract-coversheet-data', async (event, applicationNumbers) => {
+  try {
+    if (!Array.isArray(applicationNumbers) || applicationNumbers.length === 0) {
+      return { success: false, message: 'Please provide at least one application number.' };
+    }
+
+    const apiKeysResult = await loadApiKeysSync();
+    if (!apiKeysResult.success || !apiKeysResult.data?.usptoApiKey) {
+      return { success: false, message: 'USPTO API key not configured. Please set it in Settings.' };
+    }
+
+    const usptoApiKey = apiKeysResult.data.usptoApiKey;
+    const normalized = [...new Set(applicationNumbers.map((n) => cleanNumber(n)).filter(Boolean))];
+
+    if (normalized.length === 0) {
+      return { success: false, message: 'No valid application numbers found.' };
+    }
+
+    const concurrency = 3;
+    const results = [];
+
+    for (let i = 0; i < normalized.length; i += concurrency) {
+      const batch = normalized.slice(i, i + concurrency);
+      const batchResults = await Promise.allSettled(
+        batch.map((applicationNumber) => getFinalExpiryData(applicationNumber, usptoApiKey))
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const appNumber = batch[j];
+        const settled = batchResults[j];
+
+        if (settled.status === 'fulfilled') {
+          results.push({
+            success: true,
+            inputApplicationNumber: appNumber,
+            ...settled.value
+          });
+        } else {
+          results.push({
+            success: false,
+            inputApplicationNumber: appNumber,
+            message: settled.reason?.message || 'Extraction failed'
+          });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      results,
+      summary: {
+        requested: normalized.length,
+        succeeded: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length
+      }
+    };
+  } catch (error) {
+    console.error('Error extracting coversheet data:', error);
+    return { success: false, message: 'Failed to extract coversheet data: ' + error.message };
+  }
+});
+
 // Helper functions
 async function loadDownloadSettingsSync() {
   try {
@@ -423,6 +502,791 @@ async function loadApiKeysSync() {
   } catch (error) {
     return { success: false, message: 'Failed to load API keys' };
   }
+}
+
+function cleanNumber(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function formatApplicationNumber(appNo) {
+  const digits = cleanNumber(appNo);
+  if (!digits) return 'NA';
+  if (digits.length === 8) {
+    return `${digits.slice(0, 2)}/${digits.slice(2, 5)},${digits.slice(5)}`;
+  }
+  return digits;
+}
+
+function formatDateSlash(value) {
+  if (!value || String(value).toLowerCase() === 'na') return 'NA';
+  return String(value).replace(/-/g, '/');
+}
+
+function toDateSafe(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateYmd(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function addYearsDays(baseDateString, years, days) {
+  const baseDate = toDateSafe(baseDateString);
+  if (!baseDate) return 'na';
+
+  const result = new Date(baseDate.getTime());
+  result.setUTCFullYear(result.getUTCFullYear() + years);
+  result.setUTCDate(result.getUTCDate() + Number(days || 0));
+  return formatDateYmd(result);
+}
+
+function addYearsMonths(baseDateString, years, months) {
+  const baseDate = toDateSafe(baseDateString);
+  if (!baseDate) return 'na';
+
+  const result = new Date(baseDate.getTime());
+  result.setUTCFullYear(result.getUTCFullYear() + years);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  return formatDateYmd(result);
+}
+
+function localName(tagName) {
+  if (!tagName) return '';
+  const noBrace = tagName.includes('}') ? tagName.split('}').pop() : tagName;
+  return noBrace.includes(':') ? noBrace.split(':').pop() : noBrace;
+}
+
+function stripTags(value) {
+  return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractTdPatent(text) {
+  if (!text) return 'na';
+
+  const normalizeCandidate = (value) => {
+    const cleaned = String(value || '')
+      .replace(/[Oo]/g, '0')
+      .replace(/[Il!|]/g, '1')
+      .replace(/[Ss]/g, '5')
+      .replace(/[Bb]/g, '8')
+      .replace(/[Zz]/g, '2')
+      .replace(/[Gg]/g, '6');
+
+    const digits = cleaned.replace(/\D/g, '');
+    if (digits.length >= 7 && digits.length <= 12) {
+      return digits;
+    }
+    return null;
+  };
+
+  let match = text.match(/prior\s+patent\s+number\(s\)[\s\S]*?Patent\s*(?:#|No\.?|N[o0]\.?|number)?\s*[:\-]?\s*([0-9OIl!|SsBbZzGg,\s]{6,24})/i);
+  if (match?.[1]) {
+    const normalized = normalizeCandidate(match[1]);
+    if (normalized) return normalized;
+  }
+
+  match = text.match(/Patent\s*(?:#|No\.?|N[o0]\.?|number)?\s*[:\-]?\s*([0-9OIl!|SsBbZzGg,\s]{6,24})/i);
+  if (match?.[1]) {
+    const normalized = normalizeCandidate(match[1]);
+    if (normalized) return normalized;
+  }
+
+  // Table fallback near "Patent #" label in PTO/SB/25-style forms.
+  match = text.match(/\bPatent\b[\s\S]{0,80}?\b([0-9OIl!|SsBbZzGg]{7,12})\b/i);
+  if (match?.[1]) {
+    const normalized = normalizeCandidate(match[1]);
+    if (normalized) return normalized;
+  }
+
+  // Last-resort: find digit-like clusters and pick a plausible patent number.
+  const candidates = String(text)
+    .match(/[0-9OIl!|SsBbZzGg][0-9OIl!|SsBbZzGg,\s]{6,24}/g) || [];
+  for (const candidate of candidates) {
+    const normalized = normalizeCandidate(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return 'na';
+}
+
+function extractPdfTextHeuristic(pdfBuffer) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+    return '';
+  }
+
+  const raw = pdfBuffer.toString('latin1');
+  const textParts = [];
+
+  const tjRegex = /\(([^()]*)\)\s*Tj/g;
+  let match;
+  while ((match = tjRegex.exec(raw)) !== null) {
+    textParts.push(match[1]);
+  }
+  const printableBlocks = raw.match(/[A-Za-z0-9#(),.\-\/\s]{8,}/g) || [];
+  textParts.push(...printableBlocks);
+
+  return textParts
+    .join(' ')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function loadPdfDocument(pdfBuffer) {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(pdfBuffer),
+    disableWorker: true,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    verbosity: 0
+  });
+
+  const pdf = await loadingTask.promise;
+  return { pdf, loadingTask };
+}
+
+async function extractTextWithPdfJs(pdfBuffer) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+    return '';
+  }
+
+  let pdfHandle;
+  try {
+    pdfHandle = await loadPdfDocument(pdfBuffer);
+    const { pdf } = pdfHandle;
+    const textChunks = [];
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const pageText = (textContent.items || []).map((item) => item.str || '').join(' ');
+      if (pageText.trim()) {
+        textChunks.push(pageText);
+      }
+    }
+
+    return textChunks.join('\n').replace(/\s+/g, ' ').trim();
+  } catch (error) {
+    console.error('PDF.js text extraction error:', error.message);
+    return '';
+  } finally {
+    if (pdfHandle?.pdf && typeof pdfHandle.pdf.destroy === 'function') {
+      await pdfHandle.pdf.destroy();
+    }
+    if (pdfHandle?.loadingTask?.destroy) {
+      await pdfHandle.loadingTask.destroy();
+    }
+  }
+}
+
+async function ocrPdfBufferWithTesseract(pdfBuffer) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+    return '';
+  }
+
+  // Electron 28 runtime does not expose process.getBuiltinModule,
+  // which pdfjs-dist@6 uses internally. In this environment, skip
+  // pdf.js rendering and rely on local Python OCR fallback.
+  const pdfJsCompatible = typeof process.getBuiltinModule === 'function';
+  if (!pdfJsCompatible) {
+    const pythonOcrText = ocrPdfBufferWithPython(pdfBuffer);
+    if (pythonOcrText && pythonOcrText.trim().length > 0) {
+      return pythonOcrText;
+    }
+    return '';
+  }
+
+  let pdfHandle;
+  const ocrTexts = [];
+  const maxPages = 10;
+
+  try {
+    pdfHandle = await loadPdfDocument(pdfBuffer);
+    const { pdf } = pdfHandle;
+    const totalPages = Math.min(pdf.numPages, maxPages);
+
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 4 });
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const context = canvas.getContext('2d');
+
+      await page.render({
+        canvasContext: context,
+        viewport
+      }).promise;
+
+      const pngBuffer = canvas.toBuffer('image/png');
+
+      try {
+        const ocrResult = await Tesseract.recognize(pngBuffer, 'eng', {
+          logger: () => {
+            // Suppress OCR progress logs in production flow.
+          },
+          tessedit_pageseg_mode: '6',
+          preserve_interword_spaces: '1'
+        });
+
+        const text = String(ocrResult?.data?.text || '').trim();
+        if (text) {
+          ocrTexts.push(text);
+        }
+      } catch (error) {
+        console.error('OCR failed for TD page', pageNumber, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to render TD PDF for OCR:', error.message);
+  } finally {
+    if (pdfHandle?.pdf && typeof pdfHandle.pdf.destroy === 'function') {
+      await pdfHandle.pdf.destroy();
+    }
+    if (pdfHandle?.loadingTask?.destroy) {
+      await pdfHandle.loadingTask.destroy();
+    }
+  }
+
+  // If JS OCR path yielded nothing, fallback to Python OCR implementation.
+  if (ocrTexts.length === 0) {
+    const pythonOcrText = ocrPdfBufferWithPython(pdfBuffer);
+    if (pythonOcrText && pythonOcrText.trim().length > 0) {
+      return pythonOcrText;
+    }
+  }
+
+  return ocrTexts.join('\n');
+}
+
+function ocrPdfBufferWithPython(pdfBuffer) {
+  let tempPdfPath = null;
+  try {
+    tempPdfPath = path.join(os.tmpdir(), `chip_td_${Date.now()}_${Math.random().toString(16).slice(2)}.pdf`);
+    fs.writeFileSync(tempPdfPath, pdfBuffer);
+
+    const pythonScript = [
+      'import sys, io, os',
+      'import fitz',
+      'import pytesseract',
+      'from PIL import Image',
+      '',
+      'pdf_path = sys.argv[1]',
+      'tesseract_default = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"',
+      'if os.path.exists(tesseract_default):',
+      '    pytesseract.pytesseract.tesseract_cmd = tesseract_default',
+      '',
+      'doc = fitz.open(pdf_path)',
+      'parts = []',
+      'for page_num in range(len(doc)):',
+      '    page = doc[page_num]',
+      '    pix = page.get_pixmap(matrix=fitz.Matrix(4, 4), alpha=False)',
+      '    img = Image.open(io.BytesIO(pix.tobytes("png")))',
+      '    txt = pytesseract.image_to_string(img, config="--psm 6")',
+      '    if txt:',
+      '        parts.append(txt)',
+      'doc.close()',
+      'print("\\n".join(parts))'
+    ].join('\n');
+
+    const runPython = (cmd, args) => {
+      try {
+        return spawnSync(cmd, args, {
+          encoding: 'utf8',
+          maxBuffer: 20 * 1024 * 1024,
+          windowsHide: true
+        });
+      } catch (error) {
+        return { status: 1, stdout: '', stderr: error.message };
+      }
+    };
+
+    let result = runPython('python', ['-c', pythonScript, tempPdfPath]);
+    if (result.status !== 0) {
+      result = runPython('py', ['-3', '-c', pythonScript, tempPdfPath]);
+    }
+
+    if (result.status === 0 && result.stdout) {
+      return String(result.stdout).trim();
+    }
+
+    const stderrText = String(result.stderr || '').trim();
+    if (stderrText) {
+      console.error('Python OCR fallback failed:', stderrText);
+    }
+
+    return '';
+  } catch (error) {
+    console.error('Python OCR execution error:', error.message);
+    return '';
+  } finally {
+    if (tempPdfPath) {
+      try {
+        fs.unlinkSync(tempPdfPath);
+      } catch (cleanupError) {
+        // Ignore cleanup failures for temp OCR file.
+      }
+    }
+  }
+}
+
+async function extractTdPdfText(pdfBuffer) {
+  const embeddedText = await extractTextWithPdfJs(pdfBuffer);
+
+  // Match Python logic: if embedded text is insufficient, run OCR.
+  if (embeddedText && embeddedText.trim().length >= 100) {
+    return embeddedText;
+  }
+
+  try {
+    const ocrText = await ocrPdfBufferWithTesseract(pdfBuffer);
+    if (ocrText && ocrText.trim().length > 0) {
+      return ocrText;
+    }
+  } catch (error) {
+    console.error('TD OCR fallback error:', error.message);
+  }
+
+  return extractPdfTextHeuristic(pdfBuffer);
+}
+
+async function extractTdPatentNumberFromPdf(pdfBuffer) {
+  // OCR-only flow for TD image PDFs: skip embedded text extraction.
+  const ocrText = await ocrPdfBufferWithTesseract(pdfBuffer);
+  let tdPatentNumber = extractTdPatent(ocrText);
+  if (tdPatentNumber !== 'na') {
+    console.log('TD patent extracted from OCR text:', tdPatentNumber);
+    return tdPatentNumber;
+  }
+
+  const heuristicText = extractPdfTextHeuristic(pdfBuffer);
+  tdPatentNumber = extractTdPatent(heuristicText);
+  if (tdPatentNumber !== 'na') {
+    console.log('TD patent extracted from heuristic PDF text:', tdPatentNumber);
+    return tdPatentNumber;
+  }
+
+  console.log('TD OCR text sample (first 500 chars):', String(ocrText || '').slice(0, 500));
+  return 'na';
+}
+
+async function usptoRequestJson(method, pathValue, apiKey, payload = null, retryCount = 0) {
+  return new Promise((resolve, reject) => {
+    const body = payload ? JSON.stringify(payload) : null;
+
+    const options = {
+      hostname: 'api.uspto.gov',
+      port: 443,
+      path: pathValue,
+      method,
+      headers: {
+        accept: 'application/json',
+        'X-API-KEY': apiKey
+      }
+    };
+
+    if (body) {
+      options.headers['Content-Type'] = 'application/json';
+      options.headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
+    const req = https.request(options, (res) => {
+      let data = '';
+
+      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+        const redirect = new URL(res.headers.location);
+        usptoRequestJson(method, redirect.pathname + redirect.search, apiKey, payload, retryCount)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (res.statusCode === 429 && retryCount < 3) {
+        setTimeout(() => {
+          usptoRequestJson(method, pathValue, apiKey, payload, retryCount + 1)
+            .then(resolve)
+            .catch(reject);
+        }, 200 * (retryCount + 1));
+        return;
+      }
+
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`USPTO API request failed (${res.statusCode}): ${data || 'No response body'}`));
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(data));
+        } catch (error) {
+          reject(new Error('Failed to parse USPTO API response: ' + error.message));
+        }
+      });
+    });
+
+    req.on('error', (error) => reject(new Error('USPTO request error: ' + error.message)));
+
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('USPTO request timeout'));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+
+    req.end();
+  });
+}
+
+async function downloadTextFromUrl(url, apiKey, retryCount = 0) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const headers = {};
+
+    if (apiKey && /uspto\.gov$/i.test(urlObj.hostname)) {
+      headers['X-API-KEY'] = apiKey;
+    }
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+
+      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+        downloadTextFromUrl(res.headers.location, apiKey, retryCount)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (res.statusCode === 429 && retryCount < 3) {
+        setTimeout(() => {
+          downloadTextFromUrl(url, apiKey, retryCount + 1)
+            .then(resolve)
+            .catch(reject);
+        }, 200 * (retryCount + 1));
+        return;
+      }
+
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to download text (${res.statusCode})`));
+          return;
+        }
+
+        resolve(data);
+      });
+    });
+
+    req.on('error', (error) => reject(new Error('Download text error: ' + error.message)));
+
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('Download text timeout'));
+    });
+
+    req.end();
+  });
+}
+
+async function searchPatentRecord({ applicationNumber, patentNumber, apiKey }) {
+  let query;
+
+  if (applicationNumber) {
+    query = `applicationNumberText:${cleanNumber(applicationNumber)}`;
+  } else if (patentNumber) {
+    query = `applicationMetaData.patentNumber:${cleanNumber(patentNumber)}`;
+  } else {
+    throw new Error('applicationNumber or patentNumber required');
+  }
+
+  const payload = {
+    q: query,
+    pagination: {
+      offset: 0,
+      limit: 10
+    }
+  };
+
+  return usptoRequestJson('POST', '/api/v1/patent/applications/search', apiKey, payload);
+}
+
+function calculateExpiry(record) {
+  const meta = record?.applicationMetaData || {};
+  const ptaData = record?.patentTermAdjustmentData || {};
+  const ptaDays = Number(ptaData.adjustmentTotalQuantity || 0);
+
+  let baseDate = meta.filingDate || '';
+  const continuity = Array.isArray(record?.parentContinuityBag) ? record.parentContinuityBag : [];
+
+  for (const parent of continuity) {
+    const parentType = parent?.claimParentageTypeCode || '';
+    const parentDesc = String(parent?.claimParentageTypeCodeDescriptionText || '').toLowerCase();
+
+    if (parentType === 'NST' || parentDesc.includes('national stage entry')) {
+      if (parent?.parentApplicationFilingDate) {
+        baseDate = parent.parentApplicationFilingDate;
+      }
+      break;
+    }
+  }
+
+  return addYearsDays(baseDate, 20, ptaDays);
+}
+
+async function getClaimCounts(record, apiKey) {
+  try {
+    const xmlUrl = record?.grantDocumentMetaData?.fileLocationURI || '';
+    if (!xmlUrl) {
+      return { total_claims: 'na', independent_claims: 'na' };
+    }
+
+    const xmlText = await downloadTextFromUrl(xmlUrl, apiKey);
+    const claimRegex = /<([A-Za-z0-9_.:-]*claim)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+
+    let totalClaims = 0;
+    let independentClaims = 0;
+    let match;
+
+    while ((match = claimRegex.exec(xmlText)) !== null) {
+      const tag = match[1];
+      if (localName(tag) !== 'claim') {
+        continue;
+      }
+
+      totalClaims += 1;
+      const claimText = stripTags(match[2]);
+
+      if (/\bclaim\s+\d+\b/i.test(claimText)) {
+        continue;
+      }
+
+      if (/\bclaims\s+\d+/i.test(claimText)) {
+        continue;
+      }
+
+      independentClaims += 1;
+    }
+
+    return {
+      total_claims: totalClaims,
+      independent_claims: independentClaims
+    };
+  } catch (error) {
+    console.error('Claim count error:', error.message);
+    return { total_claims: 'na', independent_claims: 'na' };
+  }
+}
+
+async function getPatentDetails({ applicationNumber, patentNumber, apiKey }) {
+  const data = await searchPatentRecord({ applicationNumber, patentNumber, apiKey });
+  if (!data || Number(data.count || 0) === 0) {
+    return null;
+  }
+
+  const record = data.patentFileWrapperDataBag?.[0];
+  if (!record) {
+    return null;
+  }
+
+  const meta = record.applicationMetaData || {};
+  const ptaData = record.patentTermAdjustmentData || {};
+  const ptaDays = Number(ptaData.adjustmentTotalQuantity || 0);
+
+  let terminalDisclaimer = 'no';
+  const events = Array.isArray(record.eventDataBag) ? record.eventDataBag : [];
+  for (const event of events) {
+    const desc = String(event?.eventDescriptionText || '').toLowerCase();
+    if (desc.includes('terminal disclaimer')) {
+      terminalDisclaimer = 'yes';
+      break;
+    }
+  }
+
+  const claimData = await getClaimCounts(record, apiKey);
+
+  return {
+    record,
+    application_number: record.applicationNumberText || '',
+    docket_number: meta.docketNumber || '',
+    filing_date: meta.filingDate || '',
+    patent_number: meta.patentNumber || '',
+    grant_date: meta.grantDate || '',
+    pta_days: ptaDays,
+    terminal_disclaimer: terminalDisclaimer,
+    expiry_date: calculateExpiry(record),
+    total_claims: claimData.total_claims,
+    independent_claims: claimData.independent_claims
+  };
+}
+
+async function getDocuments(applicationNumber, apiKey) {
+  const normalized = cleanNumber(applicationNumber);
+  return usptoRequestJson('GET', `/api/v1/patent/applications/${normalized}/documents`, apiKey);
+}
+
+async function downloadTerminalDisclaimerPdfBuffer(applicationNumber, apiKey) {
+  const docs = await getDocuments(applicationNumber, apiKey);
+  const bag = Array.isArray(docs?.documentBag) ? docs.documentBag : [];
+
+  const tdDocs = bag.filter((doc) => String(doc?.documentCode || '').toUpperCase() === 'DIST.E.FILE');
+  if (tdDocs.length === 0) {
+    return null;
+  }
+
+  tdDocs.sort((a, b) => String(b?.officialDate || '').localeCompare(String(a?.officialDate || '')));
+  const selected = tdDocs[0];
+  const downloadOptions = Array.isArray(selected?.downloadOptionBag) ? selected.downloadOptionBag : [];
+
+  let pdfUrl = '';
+  for (const option of downloadOptions) {
+    const candidate = String(option?.downloadUrl || '');
+    if (candidate.toLowerCase().endsWith('.pdf')) {
+      pdfUrl = candidate;
+      break;
+    }
+  }
+
+  if (!pdfUrl && downloadOptions[0]?.downloadUrl) {
+    pdfUrl = downloadOptions[0].downloadUrl;
+  }
+
+  if (!pdfUrl) {
+    return null;
+  }
+
+  const buffer = await downloadUsptoDocument(pdfUrl, apiKey);
+  if (!buffer || buffer.length < 5 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return null;
+  }
+
+  return buffer;
+}
+
+function toDisplayValue(value) {
+  if (value === undefined || value === null || value === '' || String(value).toLowerCase() === 'na') {
+    return 'NA';
+  }
+  return String(value);
+}
+
+function getFinalExpiryMin(expiryOriginal, expiryTdPatent) {
+  if (expiryOriginal === 'na') return expiryTdPatent;
+  if (expiryTdPatent === 'na') return expiryOriginal;
+  return expiryOriginal <= expiryTdPatent ? expiryOriginal : expiryTdPatent;
+}
+
+async function getFinalExpiryData(applicationNumber, apiKey) {
+  const original = await getPatentDetails({ applicationNumber, apiKey });
+  if (!original) {
+    throw new Error('No USPTO record found for application ' + applicationNumber);
+  }
+
+  const expiryOriginal = original.expiry_date || 'na';
+  let expiryFinal = expiryOriginal;
+
+  let nextAnnuityDate = 'na';
+  if (original.grant_date) {
+    nextAnnuityDate = addYearsMonths(original.grant_date, 3, 6);
+  }
+
+  let tdPatentNumber = 'na';
+  let tdApplicationNumber = 'na';
+  let tdDocketNumber = 'na';
+  let tdFilingDate = 'na';
+  let tdGrantDate = 'na';
+  let tdPtaDays = 'na';
+  let expiryTdPatent = 'na';
+
+  if (original.terminal_disclaimer === 'yes') {
+    try {
+      const tdPdfBuffer = await downloadTerminalDisclaimerPdfBuffer(applicationNumber, apiKey);
+      if (tdPdfBuffer) {
+        tdPatentNumber = await extractTdPatentNumberFromPdf(tdPdfBuffer);
+        console.log('TD patent extraction result for application', applicationNumber, ':', tdPatentNumber);
+
+        if (tdPatentNumber !== 'na') {
+          const tdData = await getPatentDetails({ patentNumber: tdPatentNumber, apiKey });
+          if (tdData) {
+            tdApplicationNumber = tdData.application_number || 'na';
+            tdDocketNumber = tdData.docket_number || 'na';
+            tdFilingDate = tdData.filing_date || 'na';
+            tdGrantDate = tdData.grant_date || 'na';
+            tdPtaDays = tdData.pta_days;
+            expiryTdPatent = tdData.expiry_date || 'na';
+            expiryFinal = getFinalExpiryMin(expiryOriginal, expiryTdPatent);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('TD processing error for', applicationNumber, error.message);
+    }
+  }
+
+  const result = {
+    docket_number: original.docket_number,
+    application_number: original.application_number,
+    application_date: original.filing_date,
+    patent_number: original.patent_number,
+    grant_issue_date: original.grant_date,
+    next_annuity_date: nextAnnuityDate,
+    pta_days: original.pta_days,
+    total_claims: original.total_claims,
+    independent_claims: original.independent_claims,
+    terminal_disclaimer: original.terminal_disclaimer,
+    td_patent_number: tdPatentNumber,
+    td_application_number: tdApplicationNumber,
+    td_docket_number: tdDocketNumber,
+    td_application_date: tdFilingDate,
+    td_grant_issue_date: tdGrantDate,
+    td_pta_days: tdPtaDays,
+    expiry_original: expiryOriginal,
+    expiry_td_patent: expiryTdPatent,
+    expiry_final: expiryFinal
+  };
+
+  const formatted = {
+    sony_ref: toDisplayValue(result.docket_number),
+    your_ref: toDisplayValue(result.docket_number),
+    appln_no: formatApplicationNumber(result.application_number),
+    application_date: formatDateSlash(result.application_date),
+    patent_no: toDisplayValue(result.patent_number),
+    issue_date: formatDateSlash(result.grant_issue_date),
+    expiry_date: formatDateSlash(result.expiry_final),
+    days_added_by_pta: toDisplayValue(result.pta_days),
+    former_patent_referred_td: toDisplayValue(result.td_patent_number),
+    next_due_date_for_annuity: formatDateSlash(result.next_annuity_date),
+    number_of_all_claims: toDisplayValue(result.total_claims),
+    number_of_independent_claims: toDisplayValue(result.independent_claims)
+  };
+
+  return {
+    raw: result,
+    formatted
+  };
 }
 
 // Global token storage with 15-minute expiration

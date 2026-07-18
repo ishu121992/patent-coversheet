@@ -80,6 +80,7 @@ body {
     display: flex;
     flex-direction: column;
     background-color: white;
+    min-width: 0;
 }
 
 .content-header {
@@ -99,8 +100,10 @@ body {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
+    overflow-x: auto;
     width: 100%;
     box-sizing: border-box;
+    min-width: 0;
 }
 
 /* Responsive content styles */
